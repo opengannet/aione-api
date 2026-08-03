@@ -17,9 +17,12 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 
 ## Deployment
 
-- Deployments to the `aione-api` server MUST use Git commits and `git pull` in `/opt/aione-api`.
-- Do NOT deploy code to the `aione-api` server with `scp`, tarball uploads, or ad hoc file copying.
-- The production service on `aione-api` should be managed with `systemctl` using `/etc/systemd/system/new-api.service`, not Docker.
+- **Remote server**: use the SSH target `aione-api` (for example, `ssh aione-api`).
+- **Application directory**: the repository and runtime files are located at `/opt/aione-api` on the remote server.
+- **Deployment workflow**: commit changes locally, push the commit to the Git remote, then connect to `aione-api` and run `git pull --ff-only` in `/opt/aione-api`. Code changes MUST be committed before they are deployed.
+- **Forbidden deployment methods**: do NOT use `scp`, tarball uploads, ad hoc file copying, or direct edits of tracked source files on the server.
+- **Service management**: run the production application with `systemctl` using `/etc/systemd/system/new-api.service`, with `/opt/aione-api` as its working directory. Do not run the application with Docker.
+- **Restart after deployment**: after pulling and rebuilding when required, use `sudo systemctl restart new-api` and verify with `sudo systemctl status new-api` and the service health endpoint.
 
 ## Architecture
 
