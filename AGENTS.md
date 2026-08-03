@@ -15,6 +15,12 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 - **Auth**: JWT, WebAuthn/Passkeys, OAuth (GitHub, Discord, OIDC, etc.)
 - **Frontend package manager**: Bun (preferred over npm/yarn/pnpm)
 
+## Deployment
+
+- Deployments to the `aione-api` server MUST use Git commits and `git pull` in `/opt/aione-api`.
+- Do NOT deploy code to the `aione-api` server with `scp`, tarball uploads, or ad hoc file copying.
+- The production service on `aione-api` should be managed with `systemctl` using `/etc/systemd/system/new-api.service`, not Docker.
+
 ## Architecture
 
 Layered architecture: Router -> Controller -> Service -> Model
