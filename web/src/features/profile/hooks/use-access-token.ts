@@ -22,7 +22,7 @@ import { toast } from 'sonner'
 
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 
-import { generateAccessToken } from '../api'
+import { generateAccessToken, getAccessToken } from '../api'
 
 // ============================================================================
 // Access Token Hook
@@ -30,10 +30,32 @@ import { generateAccessToken } from '../api'
 
 export function useAccessToken() {
   const [token, setToken] = useState<string>('')
+  const [loading, setLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
   const { copyToClipboard } = useCopyToClipboard({ notify: false })
 
-  // Generate new access token
+  const load = useCallback(async (): Promise<boolean> => {
+    try {
+      setLoading(true)
+      const response = await getAccessToken()
+
+      if (response.success) {
+        setToken(response.data || '')
+        return true
+      }
+
+      toast.error(response.message || i18next.t('Failed to load access token'))
+      return false
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to load access token:', error)
+      toast.error(i18next.t('Failed to load access token'))
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   const generate = useCallback(async (): Promise<boolean> => {
     try {
       setGenerating(true)
@@ -42,7 +64,9 @@ export function useAccessToken() {
       if (response.success && response.data) {
         setToken(response.data)
         copyToClipboard(response.data)
-        toast.success(i18next.t('Token regenerated and copied to clipboard'))
+        toast.success(
+          i18next.t('Access token generated and copied to clipboard')
+        )
         return true
       }
 
@@ -60,7 +84,9 @@ export function useAccessToken() {
 
   return {
     token,
+    loading,
     generating,
+    load,
     generate,
   }
 }
