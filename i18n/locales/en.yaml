@@ -215,16 +215,12 @@ setting.url_must_http: "URL must start with http:// or https://"
 setting.saved: "Settings updated"
 
 # Deployment messages (Flyte2)
-deployment.not_enabled: "Flyte2 model deployment is not enabled or its settings are incomplete"
+deployment.not_enabled: "Flyte2 model deployment is not enabled"
+deployment.settings_missing: "Flyte2 deployment settings are incomplete"
+deployment.settings_required: "Base URL, project, domain, and API key are required when Flyte2 deployment is enabled"
+deployment.save_failed: "Failed to save Flyte2 deployment settings"
 deployment.id_required: "Deployment ID is required"
-deployment.container_id_required: "Container ID is required"
-deployment.name_empty: "Deployment name cannot be empty"
-deployment.name_taken: "Deployment name is not available, please choose a different name"
-deployment.hardware_id_required: "hardware_id parameter is required"
-deployment.hardware_invalid_id: "Invalid hardware_id parameter"
-deployment.api_key_required: "api_key is required"
 deployment.invalid_payload: "Invalid request payload"
-deployment.not_found: "Container details not found"
 
 # Performance messages
 performance.disk_cache_cleared: "Inactive disk cache has been cleared"

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/flyte2"
 	"github.com/gin-gonic/gin"
@@ -66,7 +67,7 @@ func GetModelDeploymentSettings(c *gin.Context) {
 func UpdateModelDeploymentSettings(c *gin.Context) {
 	var request updateFlyteDeploymentSettingsRequest
 	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
-		common.ApiErrorMsg(c, "invalid request payload")
+		common.ApiErrorI18n(c, i18n.MsgDeploymentInvalidPayload)
 		return
 	}
 	current := readFlyteDeploymentSettings()
@@ -90,7 +91,7 @@ func UpdateModelDeploymentSettings(c *gin.Context) {
 		}
 	}
 	if enabled && (baseURL == "" || project == "" || domain == "" || apiKey == "") {
-		common.ApiErrorMsg(c, "base_url, project, domain and api_key are required when Flyte2 deployment is enabled")
+		common.ApiErrorI18n(c, i18n.MsgDeploymentSettingsRequired)
 		return
 	}
 	if err := model.UpdateOptionsBulk(map[string]string{
@@ -100,7 +101,7 @@ func UpdateModelDeploymentSettings(c *gin.Context) {
 		flyteDomainKey:  domain,
 		flyteAPIKeyKey:  apiKey,
 	}); err != nil {
-		common.ApiErrorMsg(c, "failed to save Flyte2 deployment settings")
+		common.ApiErrorI18n(c, i18n.MsgDeploymentSaveFailed)
 		return
 	}
 	GetModelDeploymentSettings(c)
@@ -110,7 +111,7 @@ func TestFlyte2Connection(c *gin.Context) {
 	var request updateFlyteDeploymentSettingsRequest
 	if c.Request.ContentLength != 0 {
 		if err := common.DecodeJson(c.Request.Body, &request); err != nil {
-			common.ApiErrorMsg(c, "invalid request payload")
+			common.ApiErrorI18n(c, i18n.MsgDeploymentInvalidPayload)
 			return
 		}
 	}
@@ -126,6 +127,10 @@ func TestFlyte2Connection(c *gin.Context) {
 	}
 	if value := strings.TrimSpace(request.APIKey); value != "" {
 		settings.APIKey = value
+	}
+	if settings.BaseURL == "" || settings.Project == "" || settings.Domain == "" || settings.APIKey == "" {
+		common.ApiErrorI18n(c, i18n.MsgDeploymentSettingsMissing)
+		return
 	}
 	client, err := newFlyteClient(settings, false)
 	if err != nil {
@@ -167,7 +172,7 @@ func CreateDeployment(c *gin.Context) {
 	}
 	var request flyte2.CreateModelRequest
 	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
-		common.ApiErrorMsg(c, "invalid request payload")
+		common.ApiErrorI18n(c, i18n.MsgDeploymentInvalidPayload)
 		return
 	}
 	request.Project = settings.Project
@@ -193,7 +198,7 @@ func UpdateDeployment(c *gin.Context) {
 	}
 	var request flyte2.UpdateModelRequest
 	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
-		common.ApiErrorMsg(c, "invalid request payload")
+		common.ApiErrorI18n(c, i18n.MsgDeploymentInvalidPayload)
 		return
 	}
 	result, err := client.UpdateModel(c.Request.Context(), id, settings.Project, settings.Domain, request)
@@ -249,6 +254,14 @@ func GetDeploymentLogs(c *gin.Context) {
 
 func deploymentClient(c *gin.Context) (*flyte2.Client, flyteDeploymentSettings, bool) {
 	settings := readFlyteDeploymentSettings()
+	if !settings.Enabled {
+		common.ApiErrorI18n(c, i18n.MsgDeploymentNotEnabled)
+		return nil, settings, false
+	}
+	if settings.BaseURL == "" || settings.Project == "" || settings.Domain == "" || settings.APIKey == "" {
+		common.ApiErrorI18n(c, i18n.MsgDeploymentSettingsMissing)
+		return nil, settings, false
+	}
 	client, err := newFlyteClient(settings, true)
 	if err != nil {
 		common.ApiError(c, err)
@@ -264,7 +277,7 @@ func deploymentRequest(c *gin.Context) (*flyte2.Client, flyteDeploymentSettings,
 	}
 	id := strings.TrimSpace(c.Param("id"))
 	if id == "" {
-		common.ApiErrorMsg(c, "deployment ID is required")
+		common.ApiErrorI18n(c, i18n.MsgDeploymentIdRequired)
 		return nil, settings, "", false
 	}
 	return client, settings, id, true

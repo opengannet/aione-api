@@ -262,7 +262,23 @@ func request[T any](c *Client, ctx context.Context, method, path string, body an
 		if message == "" {
 			message = http.StatusText(response.StatusCode)
 		}
+		message = redactFlyteErrorSecrets(message, c.apiKey, body)
 		return nil, &APIError{Status: response.StatusCode, Message: message}
 	}
 	return &envelope.Data, nil
+}
+
+func redactFlyteErrorSecrets(message, apiKey string, body any) string {
+	secrets := []string{strings.TrimSpace(apiKey)}
+	if createRequest, ok := body.(CreateModelRequest); ok {
+		for _, source := range createRequest.Codes {
+			secrets = append(secrets, strings.TrimSpace(source.Token))
+		}
+	}
+	for _, secret := range secrets {
+		if secret != "" {
+			message = strings.ReplaceAll(message, secret, "[REDACTED]")
+		}
+	}
+	return message
 }
