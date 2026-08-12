@@ -5,20 +5,10 @@ This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
 published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -36,13 +26,18 @@ import {
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 
-import { deleteDeployment, listDeployments, searchDeployments } from '../api'
-import { getDeploymentStatusOptions } from '../constants'
+import {
+  deleteDeployment,
+  listDeployments,
+  startDeployment,
+  stopDeployment,
+} from '../api'
 import { deploymentsQueryKeys } from '../lib'
 import type { Deployment } from '../types'
-import { useDeploymentsColumns } from './deployments-columns'
-import { ExtendDeploymentDialog } from './dialogs/extend-deployment-dialog'
-import { RenameDeploymentDialog } from './dialogs/rename-deployment-dialog'
+import {
+  deploymentStatusName,
+  useDeploymentsColumns,
+} from './deployments-columns'
 import { UpdateConfigDialog } from './dialogs/update-config-dialog'
 import { ViewDetailsDialog } from './dialogs/view-details-dialog'
 import { ViewLogsDialog } from './dialogs/view-logs-dialog'
@@ -53,8 +48,12 @@ export function DeploymentsTable() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const isMobile = useMediaQuery('(max-width: 640px)')
-
-  // URL state (use dedicated keys so it won't collide with metadata table)
+  const [dialog, setDialog] = useState<{
+    type: 'logs' | 'details' | 'update'
+    id: string
+  }>()
+  const [deleteTarget, setDeleteTarget] = useState<Deployment>()
+  const [deleting, setDeleting] = useState(false)
   const {
     globalFilter,
     onGlobalFilterChange,
@@ -74,128 +73,54 @@ export function DeploymentsTable() {
     },
     globalFilter: { enabled: true, key: 'dFilter' },
     columnFilters: [
-      { columnId: 'status', searchKey: 'dStatus', type: 'array' },
+      { columnId: 'deploymentStatus', searchKey: 'dStatus', type: 'array' },
     ],
   })
-
-  const keyword = globalFilter ?? ''
-  const statusFilter =
-    (columnFilters.find((f) => f.id === 'status')?.value as string[]) || []
-  const activeStatus =
-    statusFilter.length > 0 && !statusFilter.includes('all')
-      ? statusFilter[0]
-      : undefined
-
-  // Dialog state
-  const [logsOpen, setLogsOpen] = useState(false)
-  const [logsDeploymentId, setLogsDeploymentId] = useState<
-    string | number | null
-  >(null)
-  const [detailsOpen, setDetailsOpen] = useState(false)
-  const [detailsDeploymentId, setDetailsDeploymentId] = useState<
-    string | number | null
-  >(null)
-  const [updateOpen, setUpdateOpen] = useState(false)
-  const [updateDeploymentId, setUpdateDeploymentId] = useState<
-    string | number | null
-  >(null)
-  const [extendOpen, setExtendOpen] = useState(false)
-  const [extendDeploymentId, setExtendDeploymentId] = useState<
-    string | number | null
-  >(null)
-  const [renameOpen, setRenameOpen] = useState(false)
-  const [renameDeploymentId, setRenameDeploymentId] = useState<
-    string | number | null
-  >(null)
-  const [renameCurrentName, setRenameCurrentName] = useState<string>('')
-
-  // Delete confirm
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<Deployment | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
-
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey: deploymentsQueryKeys.list({
-      keyword,
-      status: activeStatus,
-      p: pagination.pageIndex + 1,
-      page_size: pagination.pageSize,
-    }),
-    queryFn: async () => {
-      if (keyword.trim()) {
-        return searchDeployments({
-          keyword,
-          status: activeStatus,
-          p: pagination.pageIndex + 1,
-          page_size: pagination.pageSize,
-        })
-      }
-      return listDeployments({
-        status: activeStatus,
-        p: pagination.pageIndex + 1,
-        page_size: pagination.pageSize,
-      })
-    },
-    placeholderData: (prev) => prev,
-  })
-
-  const deployments = data?.data?.items || []
-  const totalCount = data?.data?.total || 0
-
-  const handleDelete = async () => {
-    if (!deleteTarget) return
-    setIsDeleting(true)
-    try {
-      const res = await deleteDeployment(deleteTarget.id)
-      if (res?.success) {
-        toast.success(t('Deleted successfully'))
-        queryClient.invalidateQueries({
-          queryKey: deploymentsQueryKeys.lists(),
-        })
-      } else {
-        toast.error(res?.message || t('Delete failed'))
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t('Delete failed'))
-    } finally {
-      setIsDeleting(false)
-      setDeleteOpen(false)
-      setDeleteTarget(null)
-    }
+  const statusValues =
+    (columnFilters.find((filter) => filter.id === 'deploymentStatus')
+      ?.value as string[]) || []
+  const status = statusValues.includes('all') ? undefined : statusValues[0]
+  const params = {
+    keyword: globalFilter || undefined,
+    status,
+    p: pagination.pageIndex + 1,
+    page_size: pagination.pageSize,
   }
-
-  const columns = useDeploymentsColumns({
-    onViewLogs: (id) => {
-      setLogsDeploymentId(id)
-      setLogsOpen(true)
-    },
-    onViewDetails: (id) => {
-      setDetailsDeploymentId(id)
-      setDetailsOpen(true)
-    },
-    onUpdateConfig: (id) => {
-      setUpdateDeploymentId(id)
-      setUpdateOpen(true)
-    },
-    onExtend: (id) => {
-      setExtendDeploymentId(id)
-      setExtendOpen(true)
-    },
-    onRename: (id, currentName) => {
-      setRenameCurrentName(currentName)
-      setRenameDeploymentId(id)
-      setRenameOpen(true)
-    },
-    onDelete: (deployment) => {
-      setDeleteTarget(deployment)
-      setDeleteOpen(true)
-    },
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: deploymentsQueryKeys.list(params),
+    queryFn: () => listDeployments(params),
+    placeholderData: (previous) => previous,
+    refetchInterval: () =>
+      document.visibilityState === 'visible' ? 10_000 : false,
   })
 
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: deploymentsQueryKeys.lists() })
+  const runAction = async (
+    action: () => Promise<{ success: boolean; message?: string }>
+  ) => {
+    const response = await action()
+    if (!response.success) {
+      toast.error(response.message || t('Operation failed'))
+      return
+    }
+    toast.success(t('Operation successful'))
+    void refresh()
+  }
+  const columns = useDeploymentsColumns({
+    onViewLogs: (id) => setDialog({ type: 'logs', id }),
+    onViewDetails: (id) => setDialog({ type: 'details', id }),
+    onUpdate: (id) => setDialog({ type: 'update', id }),
+    onStart: (deployment) =>
+      void runAction(() => startDeployment(deployment.id)),
+    onStop: (deployment) => void runAction(() => stopDeployment(deployment.id)),
+    onDelete: setDeleteTarget,
+  })
+  const deployments = data?.data?.items || []
   const { table } = useDataTable({
     data: deployments,
     columns,
-    totalCount,
+    totalCount: data?.data?.total || 0,
     columnFilters,
     pagination,
     globalFilter,
@@ -208,12 +133,19 @@ export function DeploymentsTable() {
     ensurePageInRange,
   })
 
-  const statusFilterOptions = useMemo(() => {
-    return [...getDeploymentStatusOptions(t)].map((opt) => ({
-      label: opt.label,
-      value: opt.value,
-    }))
-  }, [t])
+  const confirmDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    const response = await deleteDeployment(deleteTarget.id)
+    setDeleting(false)
+    if (response.success) {
+      toast.success(t('Deleted successfully'))
+      setDeleteTarget(undefined)
+      void refresh()
+    } else {
+      toast.error(response.message || t('Delete failed'))
+    }
+  }
 
   return (
     <>
@@ -232,87 +164,59 @@ export function DeploymentsTable() {
           searchPlaceholder: t('Search deployments...'),
           filters: [
             {
-              columnId: 'status',
+              columnId: 'deploymentStatus',
               title: t('Status'),
-              options: statusFilterOptions,
               singleSelect: true,
+              options: [
+                { label: t('All Status'), value: 'all' },
+                ...[1, 2, 3, 4, 6, 7, 8, 9, 10].map((value) => ({
+                  label: t(deploymentStatusName(value)),
+                  value: String(value),
+                })),
+              ],
             },
           ],
         }}
       />
-
       <ViewLogsDialog
-        open={logsOpen}
-        onOpenChange={(open) => {
-          setLogsOpen(open)
-          if (!open) setLogsDeploymentId(null)
-        }}
-        deploymentId={logsDeploymentId}
+        open={dialog?.type === 'logs'}
+        onOpenChange={(open) => !open && setDialog(undefined)}
+        deploymentId={dialog?.type === 'logs' ? dialog.id : null}
       />
-
       <ViewDetailsDialog
-        open={detailsOpen}
-        onOpenChange={(open) => {
-          setDetailsOpen(open)
-          if (!open) setDetailsDeploymentId(null)
-        }}
-        deploymentId={detailsDeploymentId}
+        open={dialog?.type === 'details'}
+        onOpenChange={(open) => !open && setDialog(undefined)}
+        deploymentId={dialog?.type === 'details' ? dialog.id : null}
       />
-
       <UpdateConfigDialog
-        open={updateOpen}
-        onOpenChange={(open) => {
-          setUpdateOpen(open)
-          if (!open) setUpdateDeploymentId(null)
-        }}
-        deploymentId={updateDeploymentId}
+        open={dialog?.type === 'update'}
+        onOpenChange={(open) => !open && setDialog(undefined)}
+        deploymentId={dialog?.type === 'update' ? dialog.id : null}
       />
-
-      <ExtendDeploymentDialog
-        open={extendOpen}
-        onOpenChange={(open) => {
-          setExtendOpen(open)
-          if (!open) setExtendDeploymentId(null)
-        }}
-        deploymentId={extendDeploymentId}
-      />
-
-      <RenameDeploymentDialog
-        open={renameOpen}
-        onOpenChange={(open) => {
-          setRenameOpen(open)
-          if (!open) setRenameDeploymentId(null)
-        }}
-        deploymentId={renameDeploymentId}
-        currentName={renameCurrentName}
-      />
-
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+      <AlertDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => !open && setDeleteTarget(undefined)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('Confirm delete')}</AlertDialogTitle>
             <AlertDialogDescription>
               {t(
                 'Are you sure you want to delete deployment "{{name}}"? This action cannot be undone.',
-                {
-                  name:
-                    deleteTarget?.container_name ||
-                    deleteTarget?.deployment_name ||
-                    deleteTarget?.id,
-                }
+                { name: deleteTarget?.name }
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>
+            <AlertDialogCancel disabled={deleting}>
               {t('Cancel')}
             </AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDelete}
-              disabled={isDeleting}
               variant='destructive'
+              onClick={confirmDelete}
+              disabled={deleting}
             >
-              {isDeleting ? t('Deleting...') : t('Delete')}
+              {deleting ? t('Deleting...') : t('Delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

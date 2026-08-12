@@ -310,36 +310,67 @@ export type ModelTabCategory = 'metadata' | 'deployments'
  * Deployment entity from API
  */
 export interface Deployment {
-  id: string | number
-  container_name?: string
-  deployment_name?: string
-  name?: string
-  status?: string
-  provider?: string
-  /**
-   * Human readable string returned by backend, e.g. "2 hour 15 minutes"
-   * or "completed".
-   */
-  time_remaining?: string
-  /**
-   * Remaining minutes (numeric) returned by backend.
-   */
-  compute_minutes_remaining?: number
-  /**
-   * Served minutes (numeric) returned by backend.
-   */
-  compute_minutes_served?: number
-  /**
-   * Completed percent (0-100) returned by backend.
-   */
-  completed_percent?: number
-  hardware_info?: string | Record<string, unknown>
-  hardware_name?: string
-  brand_name?: string
-  hardware_quantity?: number
-  created_at?: string | number
-  updated_at?: string | number
-  [key: string]: unknown
+  id: string
+  org: string
+  project: string
+  domain: string
+  name: string
+  code: string
+  type: 'VLLM'
+  image: string
+  deploymentStatus: number
+  substate: number
+  message: string
+  currentReplicas: number
+  url: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DeploymentResourceDefinition {
+  cpu: string
+  memory: string
+  gpu: number
+  gpuResourceKey?: string
+  gpuNodeLabelKey?: string
+}
+
+export interface DeploymentCodeSource {
+  id: string
+  branch?: string
+  path?: string
+  token?: string
+  tokenConfigured?: boolean
+}
+
+export interface DeploymentFormData {
+  name: string
+  id: string
+  code: string
+  image: string
+  param: string
+  modelCacheSize: string
+  resourceDefinition: DeploymentResourceDefinition
+  codes: DeploymentCodeSource[]
+}
+
+export interface DeploymentDetail extends Deployment {
+  desiredState: number
+  config: {
+    name: string
+    code: string
+    image: string
+    param: string
+    codes: DeploymentCodeSource[]
+    resourceDefinition: DeploymentResourceDefinition
+    modelCachePvc?: {
+      name: string
+      storageClassName: string
+      requestedSize: string
+      capacity: string
+      expandable: boolean
+    }
+  }
 }
 
 /**
@@ -349,8 +380,12 @@ export interface DeploymentSettingsResponse {
   success: boolean
   message?: string
   data?: {
-    enabled?: boolean
-    [key: string]: unknown
+    provider: 'flyte2'
+    enabled: boolean
+    base_url: string
+    project: string
+    domain: string
+    configured: boolean
   }
 }
 
@@ -364,8 +399,7 @@ export interface ListDeploymentsResponse {
     items?: Deployment[]
     total?: number
     page?: number
-    page_size?: number
-    status_counts?: Record<string, number>
+    pageSize?: number
   }
 }
 
@@ -376,12 +410,12 @@ export interface DeploymentLogsResponse {
   success: boolean
   message?: string
   data?: {
-    logs?: Array<{
-      timestamp?: string
-      level?: string
-      message?: string
-      source?: string
+    items?: Array<{
+      timestamp: string
+      message: string
     }>
-    cursor?: string
+    total?: number
+    page?: number
+    size?: number
   }
 }

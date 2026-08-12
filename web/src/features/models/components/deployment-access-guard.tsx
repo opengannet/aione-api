@@ -154,7 +154,7 @@ export function DeploymentAccessGuard({
             <AlertTitle>{t('Configuration required')}</AlertTitle>
             <AlertDescription>
               {t(
-                'Please enable io.net model deployment service and configure an API key in System Settings.'
+                'Please enable Flyte2 model deployment and configure its connection in System Settings.'
               )}
             </AlertDescription>
           </Alert>
@@ -199,5 +199,5 @@ export function DeploymentAccessGuard({
     )
   }
 
-  return <>{children}</>
+  return children
 }

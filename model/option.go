@@ -30,6 +30,11 @@ func AllOption() ([]*Option, error) {
 func InitOptionMap() {
 	common.OptionMapRWMutex.Lock()
 	common.OptionMap = make(map[string]string)
+	common.OptionMap["model_deployment.flyte2.enabled"] = "false"
+	common.OptionMap["model_deployment.flyte2.base_url"] = ""
+	common.OptionMap["model_deployment.flyte2.project"] = "aione"
+	common.OptionMap["model_deployment.flyte2.domain"] = "development"
+	common.OptionMap["model_deployment.flyte2.api_key"] = ""
 
 	// 添加原有的系统配置
 	common.OptionMap["FileUploadPermission"] = strconv.Itoa(common.FileUploadPermission)

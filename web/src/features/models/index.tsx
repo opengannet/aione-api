@@ -133,7 +133,7 @@ function DeploymentsSection() {
   const {
     loading: deploymentLoading,
     loadingPhase,
-    isIoNetEnabled,
+    isFlyte2Enabled,
     connectionLoading,
     connectionOk,
     connectionError,
@@ -142,7 +142,7 @@ function DeploymentsSection() {
 
   // Prefetch deployments list while connection check is in progress.
   useEffect(() => {
-    if (isIoNetEnabled && loadingPhase === 'connection') {
+    if (isFlyte2Enabled && loadingPhase === 'connection') {
       const defaultParams = { p: 1, page_size: 10 }
       queryClient.prefetchQuery({
         queryKey: deploymentsQueryKeys.list(defaultParams),
@@ -150,13 +150,13 @@ function DeploymentsSection() {
         staleTime: 30 * 1000,
       })
     }
-  }, [isIoNetEnabled, loadingPhase, queryClient])
+  }, [isFlyte2Enabled, loadingPhase, queryClient])
 
   return (
     <DeploymentAccessGuard
       loading={deploymentLoading}
       loadingPhase={loadingPhase}
-      isEnabled={isIoNetEnabled}
+      isEnabled={isFlyte2Enabled}
       connectionLoading={connectionLoading}
       connectionOk={connectionOk}
       connectionError={connectionError}

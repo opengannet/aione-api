@@ -253,7 +253,7 @@ const (
 	MsgSettingSaved            = "setting.saved"
 )
 
-// Deployment related messages (io.net)
+// Model deployment related messages
 const (
 	MsgDeploymentNotEnabled     = "deployment.not_enabled"
 	MsgDeploymentIdRequired     = "deployment.id_required"

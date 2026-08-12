@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { ChannelAffinitySection } from '../general/channel-affinity'
-import { IoNetDeploymentSettingsSection } from '../integrations/ionet-deployment-settings-section'
+import { Flyte2DeploymentSettingsSection } from '../integrations/flyte2-deployment-settings-section'
 import type { ModelSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 import { ClaudeSettingsCard } from './claude-settings-card'
@@ -170,14 +170,7 @@ const MODELS_SECTIONS = [
   {
     id: 'model-deployment',
     titleKey: 'Model Deployment',
-    build: (settings: ModelSettings) => (
-      <IoNetDeploymentSettingsSection
-        defaultValues={{
-          enabled: settings['model_deployment.ionet.enabled'],
-          apiKey: settings['model_deployment.ionet.api_key'],
-        }}
-      />
-    ),
+    build: () => <Flyte2DeploymentSettingsSection />,
   },
 ] as const
 

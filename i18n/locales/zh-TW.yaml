@@ -215,8 +215,8 @@ setting.gotify_url_invalid: "無效的Gotify伺服器位址"
 setting.url_must_http: "URL必須以http://或https://開頭"
 setting.saved: "設定已更新"
 
-# Deployment messages (io.net)
-deployment.not_enabled: "io.net 模型部署功能未啟用或 API 密鑰缺失"
+# Deployment messages (Flyte2)
+deployment.not_enabled: "Flyte2 模型部署功能未啟用或設定不完整"
 deployment.id_required: "deployment ID 為必填項"
 deployment.container_id_required: "container ID 為必填項"
 deployment.name_empty: "deployment 名稱不能為空"

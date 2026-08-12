@@ -240,8 +240,11 @@ export type ModelSettings = {
   'channel_affinity_setting.max_entries': number
   'channel_affinity_setting.default_ttl_seconds': number
   'channel_affinity_setting.rules': string
-  'model_deployment.ionet.api_key': string
-  'model_deployment.ionet.enabled': boolean
+  'model_deployment.flyte2.enabled': boolean
+  'model_deployment.flyte2.base_url': string
+  'model_deployment.flyte2.project': string
+  'model_deployment.flyte2.domain': string
+  'model_deployment.flyte2.api_key': string
 }
 
 export type BillingSettings = {
