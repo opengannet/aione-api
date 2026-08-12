@@ -58,3 +58,22 @@ func TestAPIErrorDoesNotExposeAPIKey(t *testing.T) {
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "sensitive-key")
 }
+
+func TestClientMapsNonJSONHTTPErrorWithoutLeakingResponseDetails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("upstream proxy failure containing internal details"))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL+"/v2", "sensitive-key")
+	require.NoError(t, err)
+
+	_, err = client.ListModels(context.Background(), "aione", "development", "", "", 1, 20)
+	var apiErr *APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusBadGateway, apiErr.Status)
+	assert.Equal(t, http.StatusText(http.StatusBadGateway), apiErr.Message)
+	assert.NotContains(t, err.Error(), "sensitive-key")
+	assert.NotContains(t, err.Error(), "internal details")
+}

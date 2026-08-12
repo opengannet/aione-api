@@ -252,6 +252,9 @@ func request[T any](c *Client, ctx context.Context, method, path string, body an
 	defer response.Body.Close()
 	var envelope Envelope[T]
 	if err := common.DecodeJson(io.LimitReader(response.Body, 4<<20), &envelope); err != nil {
+		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+			return nil, &APIError{Status: response.StatusCode, Message: http.StatusText(response.StatusCode)}
+		}
 		return nil, errors.New("invalid response from Flyte2")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 || envelope.Status >= 400 {
