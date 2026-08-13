@@ -88,7 +88,7 @@ export function ViewDetailsDialog({
               rows={[
                 [t('Name'), detail.config.name],
                 [t('Model code'), detail.config.code],
-                [t('Image'), detail.config.image],
+                [t('Container image'), detail.config.image],
                 [t('Startup arguments'), detail.config.param || '-'],
               ]}
             />

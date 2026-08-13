@@ -125,7 +125,7 @@ export function UpdateConfigDialog({
                 onChange={(e) => set('name', e.target.value)}
               />
             </Field>
-            <Field label={t('Image')}>
+            <Field label={t('Container image')}>
               <Input
                 value={values.image}
                 onChange={(e) => set('image', e.target.value)}
