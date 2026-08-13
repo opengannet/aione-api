@@ -255,16 +255,22 @@ const (
 
 // Model deployment related messages
 const (
-	MsgDeploymentNotEnabled          = "deployment.not_enabled"
-	MsgDeploymentSettingsMissing     = "deployment.settings_missing"
-	MsgDeploymentSettingsRequired    = "deployment.settings_required"
-	MsgDeploymentSaveFailed          = "deployment.save_failed"
-	MsgDeploymentIdRequired          = "deployment.id_required"
-	MsgDeploymentInvalidPayload      = "deployment.invalid_payload"
-	MsgDeploymentPublicationDisabled = "deployment.publication_disabled"
-	MsgDeploymentPricingRequired     = "deployment.pricing_required"
-	MsgDeploymentScopeLocked         = "deployment.scope_locked"
-	MsgDeploymentKeyClearDisabled    = "deployment.key_clear_disabled"
+	MsgDeploymentNotEnabled            = "deployment.not_enabled"
+	MsgDeploymentSettingsMissing       = "deployment.settings_missing"
+	MsgDeploymentSettingsRequired      = "deployment.settings_required"
+	MsgDeploymentSaveFailed            = "deployment.save_failed"
+	MsgDeploymentIdRequired            = "deployment.id_required"
+	MsgDeploymentInvalidPayload        = "deployment.invalid_payload"
+	MsgDeploymentPublicationDisabled   = "deployment.publication_disabled"
+	MsgDeploymentPricingRequired       = "deployment.pricing_required"
+	MsgDeploymentPricingAdvanced       = "deployment.pricing_advanced"
+	MsgDeploymentPricingModeInvalid    = "deployment.pricing_mode_invalid"
+	MsgDeploymentPricingInputInvalid   = "deployment.pricing_input_invalid"
+	MsgDeploymentPricingOutputInvalid  = "deployment.pricing_output_invalid"
+	MsgDeploymentPricingRequestInvalid = "deployment.pricing_request_invalid"
+	MsgDeploymentPricingSaveFailed     = "deployment.pricing_save_failed"
+	MsgDeploymentScopeLocked           = "deployment.scope_locked"
+	MsgDeploymentKeyClearDisabled      = "deployment.key_clear_disabled"
 )
 
 // Performance related messages

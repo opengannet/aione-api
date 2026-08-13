@@ -1,5 +1,3 @@
-import axios from 'axios'
-
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -18,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import axios from 'axios'
+
 import { api } from '@/lib/api'
 
 import type {
@@ -415,6 +415,34 @@ export async function getDeploymentPublication(id: string | number) {
     success: boolean
     message?: string
     data?: import('./types').FlytePublication | null
+  }
+}
+
+export async function getDeploymentPricing(id: string | number) {
+  const res = await api.get(`/api/deployments/${id}/pricing`)
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: import('./types').DeploymentPricing
+  }
+}
+
+export async function updateDeploymentPricing(
+  id: string | number,
+  data: import('./types').UpdateDeploymentPricing
+) {
+  try {
+    const res = await api.put(`/api/deployments/${id}/pricing`, data)
+    return res.data as {
+      success: boolean
+      message?: string
+      data?: import('./types').DeploymentPricing
+    }
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error) && error.response?.data) {
+      return error.response.data as { success: boolean; message?: string }
+    }
+    throw error
   }
 }
 

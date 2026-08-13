@@ -366,6 +366,8 @@ func SetApiRouter(router *gin.Engine) {
 			deploymentsRoute.POST("/", controller.CreateDeployment)
 			deploymentsRoute.POST("/publications/reconcile", controller.ReconcileAllDeploymentPublications)
 
+			deploymentsRoute.GET("/:id/pricing", controller.GetDeploymentPricing)
+			deploymentsRoute.PUT("/:id/pricing", controller.UpdateDeploymentPricing)
 			deploymentsRoute.GET("/:id/publication", controller.GetDeploymentPublication)
 			deploymentsRoute.POST("/:id/publication", controller.PublishDeployment)
 			deploymentsRoute.DELETE("/:id/publication", controller.DeleteDeploymentPublication)

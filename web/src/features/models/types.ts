@@ -353,6 +353,31 @@ export interface FlytePublication {
   warning?: string
 }
 
+export type DeploymentPricingMode =
+  | 'free'
+  | 'per_token'
+  | 'per_request'
+  | 'advanced'
+
+export interface DeploymentPricing {
+  deployment_id: string
+  model_code: string
+  configured: boolean
+  mode?: DeploymentPricingMode
+  input_price?: number
+  output_price?: number
+  request_price?: number
+  advanced_only: boolean
+  advanced_page_url: string
+}
+
+export interface UpdateDeploymentPricing {
+  mode: Exclude<DeploymentPricingMode, 'advanced'>
+  input_price?: number
+  output_price?: number
+  request_price?: number
+}
+
 export interface NewPublicationToken {
   user_id: number
   name: string

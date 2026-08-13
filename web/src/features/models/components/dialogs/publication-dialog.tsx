@@ -8,11 +8,10 @@ License, or (at your option) any later version.
 */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, RefreshCw, Unlink } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -37,6 +36,7 @@ import {
 } from '../../api'
 import { deploymentsQueryKeys } from '../../lib'
 import type { NewPublicationToken } from '../../types'
+import { DeploymentPricingPanel } from './deployment-pricing-panel'
 
 const newTokenDefaults: NewPublicationToken = {
   user_id: 0,
@@ -64,6 +64,7 @@ export function PublicationDialog({
   const [tokenIDs, setTokenIDs] = useState('')
   const [upstreamModel, setUpstreamModel] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [pricingConfigured, setPricingConfigured] = useState(false)
   const [createNewToken, setCreateNewToken] = useState(false)
   const [newToken, setNewToken] =
     useState<NewPublicationToken>(newTokenDefaults)
@@ -79,12 +80,16 @@ export function PublicationDialog({
       .split(',')
       .map((value) => Number(value.trim()))
       .filter((value) => Number.isInteger(value) && value > 0)
-  const refresh = async () => {
+  useEffect(() => {
+    if (open) setPricingConfigured(false)
+  }, [deploymentId, open])
+
+  const refresh = useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey }),
       queryClient.invalidateQueries({ queryKey: deploymentsQueryKeys.lists() }),
     ])
-  }
+  }, [queryClient, queryKey])
   const run = async (
     action: () => Promise<{ success: boolean; message?: string }>
   ) => {
@@ -109,6 +114,13 @@ export function PublicationDialog({
         </DialogHeader>
         {isLoading ? (
           <Loader2 className='mx-auto my-10 size-8 animate-spin' />
+        ) : null}
+        {!isLoading && deploymentId ? (
+          <DeploymentPricingPanel
+            deploymentId={deploymentId}
+            onStatusChange={setPricingConfigured}
+            onSaved={refresh}
+          />
         ) : null}
         {!isLoading && publication ? (
           <div className='space-y-5'>
@@ -137,21 +149,6 @@ export function PublicationDialog({
                 label={t('Upstream model')}
                 value={publication.upstream_model || '-'}
               />
-              <div>
-                <div className='text-muted-foreground'>{t('Pricing')}</div>
-                <StatusBadge
-                  label={
-                    publication.pricing_configured
-                      ? t('Configured')
-                      : t('Missing')
-                  }
-                  variant={
-                    publication.pricing_configured ? 'success' : 'danger'
-                  }
-                  size='sm'
-                  copyable={false}
-                />
-              </div>
             </div>
             {publication.last_error ? (
               <p className='text-destructive rounded-lg border p-3 text-sm'>
@@ -162,11 +159,6 @@ export function PublicationDialog({
               <p className='rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300'>
                 {t(publication.warning)}
               </p>
-            ) : null}
-            {!publication.pricing_configured ? (
-              <Button variant='outline' render={<a href='/settings/models' />}>
-                {t('Open model pricing settings')}
-              </Button>
             ) : null}
             {publication.reason_code === 'upstream_model_required' ? (
               <div className='grid gap-2'>
@@ -278,6 +270,11 @@ export function PublicationDialog({
                 'This deployment is not published. Configure pricing first, then bind at least one API key.'
               )}
             </p>
+            {!pricingConfigured ? (
+              <p className='rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300'>
+                {t('Save model pricing before publishing.')}
+              </p>
+            ) : null}
             <div className='grid gap-4 md:grid-cols-2'>
               <div>
                 <Label className='mb-2'>{t('Fixed access group')}</Label>
@@ -408,6 +405,7 @@ export function PublicationDialog({
               <Button
                 disabled={
                   submitting ||
+                  !pricingConfigured ||
                   !group.trim() ||
                   (parsedTokenIDs().length === 0 && !createNewToken) ||
                   (createNewToken &&

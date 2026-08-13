@@ -66,4 +66,6 @@ export const deploymentsQueryKeys = {
     [...deploymentsQueryKeys.all, 'detail', id] as const,
   publication: (id: string | number) =>
     [...deploymentsQueryKeys.all, 'publication', id] as const,
+  pricing: (id: string | number) =>
+    [...deploymentsQueryKeys.all, 'pricing', id] as const,
 }
