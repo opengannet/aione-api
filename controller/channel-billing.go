@@ -432,6 +432,10 @@ func UpdateChannelBalance(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if model.IsFlyteManagedChannel(id) {
+		common.ApiErrorMsg(c, "Flyte2 managed channels do not use an upstream balance")
+		return
+	}
 	if channel.ChannelInfo.IsMultiKey {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
@@ -456,8 +460,12 @@ func updateAllChannelsBalance() error {
 	if err != nil {
 		return err
 	}
+	model.MarkFlyteManagedChannels(channels)
 	for _, channel := range channels {
 		if channel.Status != common.ChannelStatusEnabled {
+			continue
+		}
+		if channel.Flyte2Managed {
 			continue
 		}
 		if channel.ChannelInfo.IsMultiKey {

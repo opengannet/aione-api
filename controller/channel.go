@@ -168,6 +168,7 @@ func GetAllChannels(c *gin.Context) {
 	for _, datum := range channelData {
 		clearChannelInfo(datum)
 	}
+	model.MarkFlyteManagedChannels(channelData)
 
 	countQuery := buildChannelListQuery(groupFilter, statusFilter, -1)
 	var results []struct {
@@ -231,6 +232,10 @@ func FetchUpstreamModels(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	if model.IsFlyteManagedChannel(id) {
+		common.ApiErrorMsg(c, "upstream model discovery is managed by Flyte2 publication reconciliation")
 		return
 	}
 
@@ -381,6 +386,7 @@ func SearchChannels(c *gin.Context) {
 	for _, datum := range pagedData {
 		clearChannelInfo(datum)
 	}
+	model.MarkFlyteManagedChannels(pagedData)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -407,6 +413,7 @@ func GetChannel(c *gin.Context) {
 	}
 	if channel != nil {
 		clearChannelInfo(channel)
+		model.MarkFlyteManagedChannels([]*model.Channel{channel})
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -434,6 +441,10 @@ func GetChannelKey(c *gin.Context) {
 
 	if channel == nil {
 		common.ApiError(c, fmt.Errorf("渠道不存在"))
+		return
+	}
+	if model.IsFlyteManagedChannel(channelId) {
+		common.ApiErrorMsg(c, "Flyte2 managed channels do not expose or use an upstream key")
 		return
 	}
 
@@ -621,6 +632,12 @@ func AddChannel(c *gin.Context) {
 		})
 		return
 	}
+	if addChannelRequest.Channel.Status == common.ChannelStatusEnabled {
+		if conflict, found := model.FlytePublishedChannelConflict(0, addChannelRequest.Channel.Group, addChannelRequest.Channel.Models); found {
+			common.ApiErrorMsg(c, "channel conflicts with Flyte2 managed publication for model "+conflict)
+			return
+		}
+	}
 
 	addChannelRequest.Channel.CreatedTime = common.GetTimestamp()
 	keys := make([]string, 0)
@@ -711,6 +728,10 @@ func AddChannel(c *gin.Context) {
 
 func DeleteChannel(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
+	if model.IsFlyteManagedChannel(id) {
+		common.ApiErrorMsg(c, "Flyte2 managed channels can only be removed by unpublishing their deployments")
+		return
+	}
 	channelName := ""
 	channelProxy := ""
 	channelLookupFailed := false
@@ -744,7 +765,7 @@ func DeleteChannel(c *gin.Context) {
 }
 
 func DeleteDisabledChannel(c *gin.Context) {
-	rows, err := model.DeleteDisabledChannel()
+	rows, skipped, err := model.DeleteDisabledChannel()
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -759,7 +780,7 @@ func DeleteDisabledChannel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    rows,
+		"data":    gin.H{"deleted": rows, "skipped_managed": skipped},
 	})
 	return
 }
@@ -812,6 +833,33 @@ func EnableTagChannels(c *gin.Context) {
 		})
 		return
 	}
+	channels, err := model.GetChannelsByTag(channelTag.Tag, false, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	for _, channel := range channels {
+		if model.IsFlyteManagedChannel(channel.Id) {
+			if conflict, found := model.FlyteManagedChannelEnableConflict(channel.Id); found {
+				common.ApiErrorMsg(c, "Flyte2 managed channel conflicts with an enabled channel for model "+conflict)
+				return
+			}
+			for _, candidate := range channels {
+				if candidate.Id == channel.Id {
+					continue
+				}
+				if conflict, found := model.FlyteManagedChannelDefinitionConflict(channel.Id, candidate.Group, candidate.Models); found {
+					common.ApiErrorMsg(c, "tag enable would create a Flyte2 channel conflict for model "+conflict)
+					return
+				}
+			}
+			continue
+		}
+		if conflict, found := model.FlytePublishedChannelConflict(channel.Id, channel.Group, channel.Models); found {
+			common.ApiErrorMsg(c, "channel conflicts with Flyte2 managed publication for model "+conflict)
+			return
+		}
+	}
 	err = model.EnableChannelByTag(channelTag.Tag)
 	if err != nil {
 		common.ApiError(c, err)
@@ -844,6 +892,31 @@ func EditTagChannels(c *gin.Context) {
 			"message": "tag不能为空",
 		})
 		return
+	}
+	if model.HasFlyteManagedChannelWithTag(channelTag.Tag) && (channelTag.ModelMapping != nil || channelTag.Models != nil || channelTag.Groups != nil || channelTag.ParamOverride != nil || channelTag.HeaderOverride != nil) {
+		common.ApiErrorMsg(c, "Flyte2 managed channels only allow tag, priority, and weight updates")
+		return
+	}
+	channels, err := model.GetChannelsByTag(channelTag.Tag, false, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	for _, channel := range channels {
+		if channel.Status != common.ChannelStatusEnabled || model.IsFlyteManagedChannel(channel.Id) {
+			continue
+		}
+		groups, models := channel.Group, channel.Models
+		if channelTag.Groups != nil {
+			groups = *channelTag.Groups
+		}
+		if channelTag.Models != nil {
+			models = *channelTag.Models
+		}
+		if conflict, found := model.FlytePublishedChannelConflict(channel.Id, groups, models); found {
+			common.ApiErrorMsg(c, "tag edit would create a Flyte2 channel conflict for model "+conflict)
+			return
+		}
 	}
 	if (channelTag.ParamOverride != nil || channelTag.HeaderOverride != nil) &&
 		!authz.Can(c.GetInt("id"), c.GetInt("role"), authz.ChannelSensitiveWrite) {
@@ -903,6 +976,12 @@ func DeleteChannelBatch(c *gin.Context) {
 		})
 		return
 	}
+	for _, id := range channelBatch.Ids {
+		if model.IsFlyteManagedChannel(id) {
+			common.ApiErrorMsg(c, "batch contains a Flyte2 managed channel; managed channels were not deleted")
+			return
+		}
+	}
 	deletedCount, err := model.BatchDeleteChannels(channelBatch.Ids)
 	if err != nil {
 		common.ApiError(c, err)
@@ -959,6 +1038,25 @@ func UpdateChannel(c *gin.Context) {
 		return
 	}
 	clearChannelReadOnlyFields(&channel, requestData)
+	if model.IsFlyteManagedChannel(channel.Id) {
+		allowed := map[string]bool{"id": true, "priority": true, "weight": true, "tag": true}
+		for field := range requestData {
+			if !allowed[field] {
+				common.ApiErrorMsg(c, "Flyte2 managed channels only allow priority, weight, and tag updates")
+				return
+			}
+		}
+		_, updatePriority := requestData["priority"]
+		_, updateWeight := requestData["weight"]
+		_, updateTag := requestData["tag"]
+		if err := model.UpdateFlyteManagedChannelTuning(channel.Id, channel.Priority, channel.Weight, channel.Tag, updatePriority, updateWeight, updateTag); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		model.InitChannelCache()
+		common.ApiSuccess(c, gin.H{})
+		return
+	}
 
 	// 使用统一的校验函数
 	if err := validateChannel(&channel.Channel, false); err != nil {
@@ -987,6 +1085,12 @@ func UpdateChannel(c *gin.Context) {
 
 	// Always copy the original ChannelInfo so that fields like IsMultiKey and MultiKeySize are retained.
 	channel.ChannelInfo = originChannel.ChannelInfo
+	if originChannel.Status == common.ChannelStatusEnabled {
+		if conflict, found := model.FlytePublishedChannelConflict(channel.Id, channel.Group, channel.Models); found {
+			common.ApiErrorMsg(c, "channel conflicts with Flyte2 managed publication for model "+conflict)
+			return
+		}
+	}
 
 	if channelHasSensitiveChanges(&channel, originChannel, requestData) &&
 		!authz.Can(c.GetInt("id"), c.GetInt("role"), authz.ChannelSensitiveWrite) {
@@ -1131,6 +1235,24 @@ func UpdateChannelStatus(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
+	if req.Status == common.ChannelStatusEnabled {
+		if model.IsFlyteManagedChannel(id) {
+			if conflict, found := model.FlyteManagedChannelEnableConflict(id); found {
+				common.ApiErrorMsg(c, "Flyte2 managed channel conflicts with an enabled channel for model "+conflict)
+				return
+			}
+		} else {
+			channel, lookupErr := model.GetChannelById(id, false)
+			if lookupErr != nil {
+				common.ApiError(c, lookupErr)
+				return
+			}
+			if conflict, found := model.FlytePublishedChannelConflict(id, channel.Group, channel.Models); found {
+				common.ApiErrorMsg(c, "channel conflicts with Flyte2 managed publication for model "+conflict)
+				return
+			}
+		}
+	}
 	changed := model.UpdateChannelStatus(id, "", req.Status, "manual operation")
 	if changed {
 		model.InitChannelCache()
@@ -1155,6 +1277,24 @@ func BatchUpdateChannelStatus(c *gin.Context) {
 	}
 	changedCount := 0
 	for _, id := range req.Ids {
+		if req.Status == common.ChannelStatusEnabled {
+			if model.IsFlyteManagedChannel(id) {
+				if conflict, found := model.FlyteManagedChannelEnableConflict(id); found {
+					common.ApiErrorMsg(c, "Flyte2 managed channel conflicts with an enabled channel for model "+conflict)
+					return
+				}
+			} else {
+				channel, lookupErr := model.GetChannelById(id, false)
+				if lookupErr != nil {
+					common.ApiError(c, lookupErr)
+					return
+				}
+				if conflict, found := model.FlytePublishedChannelConflict(id, channel.Group, channel.Models); found {
+					common.ApiErrorMsg(c, "channel conflicts with Flyte2 managed publication for model "+conflict)
+					return
+				}
+			}
+		}
 		if model.UpdateChannelStatus(id, "", req.Status, "manual batch operation") {
 			changedCount++
 		}
@@ -1202,6 +1342,9 @@ type fetchModelsRequest struct {
 func buildAdvancedCustomModelPreviewChannel(req fetchModelsRequest) (*model.Channel, error) {
 	var channel *model.Channel
 	if req.ChannelID > 0 {
+		if model.IsFlyteManagedChannel(req.ChannelID) {
+			return nil, fmt.Errorf("upstream model discovery is managed by Flyte2 publication reconciliation")
+		}
 		savedChannel, err := model.GetChannelById(req.ChannelID, true)
 		if err != nil {
 			return nil, err
@@ -1402,6 +1545,10 @@ func CopyChannel(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid id"})
+		return
+	}
+	if model.IsFlyteManagedChannel(id) {
+		common.ApiErrorMsg(c, "Flyte2 managed channels cannot be copied")
 		return
 	}
 

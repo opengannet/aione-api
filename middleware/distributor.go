@@ -479,6 +479,10 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	// c.Request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", key))
 	common.SetContextKey(c, constant.ContextKeyChannelKey, key)
 	common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, channel.GetBaseURL())
+	if baseURL, mapping, ok := model.GetFlyteManagedRoute(channel.Id, modelName); ok {
+		common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, baseURL)
+		common.SetContextKey(c, constant.ContextKeyChannelModelMapping, mapping)
+	}
 
 	common.SetContextKey(c, constant.ContextKeySystemPromptOverride, false)
 

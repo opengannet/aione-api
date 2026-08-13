@@ -31,6 +31,7 @@ type Values = {
   domain: string
   api_key: string
   configured: boolean
+  publication_enabled: boolean
 }
 
 const emptyValues: Values = {
@@ -40,6 +41,7 @@ const emptyValues: Values = {
   domain: 'development',
   api_key: '',
   configured: false,
+  publication_enabled: false,
 }
 
 export function Flyte2DeploymentSettingsSection() {
@@ -80,6 +82,7 @@ export function Flyte2DeploymentSettingsSection() {
       project: values.project.trim(),
       domain: values.domain.trim(),
       api_key: values.api_key.trim() || undefined,
+      publication_enabled: values.publication_enabled,
     })
     setSaving(false)
     if (!response.success) {
@@ -129,6 +132,27 @@ export function Flyte2DeploymentSettingsSection() {
             checked={values.enabled}
             onCheckedChange={(checked) => setField('enabled', checked)}
             disabled={loading || saving}
+          />
+        </div>
+
+        <div className='flex items-center justify-between gap-4 rounded-lg border p-4'>
+          <div>
+            <Label htmlFor='flyte2-publication-enabled'>
+              {t('Enable Flyte2 model publication')}
+            </Label>
+            <p className='text-muted-foreground mt-1 text-sm'>
+              {t(
+                'Allow new deployments and API keys to be bound to the managed Flyte2 channel.'
+              )}
+            </p>
+          </div>
+          <Switch
+            id='flyte2-publication-enabled'
+            checked={values.publication_enabled}
+            onCheckedChange={(checked) =>
+              setField('publication_enabled', checked)
+            }
+            disabled={loading || saving || !values.enabled}
           />
         </div>
 

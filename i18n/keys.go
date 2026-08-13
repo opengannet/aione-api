@@ -255,12 +255,16 @@ const (
 
 // Model deployment related messages
 const (
-	MsgDeploymentNotEnabled       = "deployment.not_enabled"
-	MsgDeploymentSettingsMissing  = "deployment.settings_missing"
-	MsgDeploymentSettingsRequired = "deployment.settings_required"
-	MsgDeploymentSaveFailed       = "deployment.save_failed"
-	MsgDeploymentIdRequired       = "deployment.id_required"
-	MsgDeploymentInvalidPayload   = "deployment.invalid_payload"
+	MsgDeploymentNotEnabled          = "deployment.not_enabled"
+	MsgDeploymentSettingsMissing     = "deployment.settings_missing"
+	MsgDeploymentSettingsRequired    = "deployment.settings_required"
+	MsgDeploymentSaveFailed          = "deployment.save_failed"
+	MsgDeploymentIdRequired          = "deployment.id_required"
+	MsgDeploymentInvalidPayload      = "deployment.invalid_payload"
+	MsgDeploymentPublicationDisabled = "deployment.publication_disabled"
+	MsgDeploymentPricingRequired     = "deployment.pricing_required"
+	MsgDeploymentScopeLocked         = "deployment.scope_locked"
+	MsgDeploymentKeyClearDisabled    = "deployment.key_clear_disabled"
 )
 
 // Performance related messages

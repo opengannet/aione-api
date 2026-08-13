@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -18,23 +19,34 @@ import (
 )
 
 func TestUpdateModelDeploymentSettingsAPIKeySemantics(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(request.URL.Path, "/context") {
+			_, _ = w.Write([]byte(`{"status":200,"data":{"org":"org","project":"aione","domain":"development"}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"status":200,"data":{"items":[],"total":0,"page":1,"pageSize":1}}`))
+	}))
+	defer server.Close()
 	for _, test := range []struct {
 		name        string
-		payload     string
+		extra       string
+		enabled     bool
 		expectedKey string
 	}{
-		{name: "preserve omitted key", payload: `{"enabled":false,"base_url":"https://flyte.example/v2","project":"aione","domain":"development"}`, expectedKey: "saved-key"},
-		{name: "preserve empty key", payload: `{"enabled":false,"base_url":"https://flyte.example/v2","project":"aione","domain":"development","api_key":""}`, expectedKey: "saved-key"},
-		{name: "replace key", payload: `{"enabled":true,"base_url":"https://flyte.example/v2","project":"aione","domain":"development","api_key":"replacement-key"}`, expectedKey: "replacement-key"},
-		{name: "explicitly clear key", payload: `{"enabled":false,"base_url":"https://flyte.example/v2","project":"aione","domain":"development","clear_api_key":true}`, expectedKey: ""},
+		{name: "preserve omitted key", expectedKey: "saved-key"},
+		{name: "preserve empty key", extra: `,"api_key":""`, expectedKey: "saved-key"},
+		{name: "replace key", enabled: true, extra: `,"api_key":"replacement-key"`, expectedKey: "replacement-key"},
+		{name: "explicitly clear key", extra: `,"clear_api_key":true`, expectedKey: ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			setupDeploymentControllerTest(t, flyteDeploymentSettings{
-				BaseURL: "https://old.example/v2", Project: "old-project", Domain: "old-domain", APIKey: "saved-key", Configured: true,
+				BaseURL: server.URL + "/v2", Project: "aione", Domain: "development", APIKey: "saved-key", Configured: true,
 			})
 			response := httptest.NewRecorder()
 			context, _ := gin.CreateTestContext(response)
-			context.Request = httptest.NewRequest(http.MethodPut, "/api/deployments/settings", strings.NewReader(test.payload))
+			payload := fmt.Sprintf(`{"enabled":%t,"base_url":%q,"project":"aione","domain":"development"%s}`, test.enabled, server.URL+"/v2", test.extra)
+			context.Request = httptest.NewRequest(http.MethodPut, "/api/deployments/settings", strings.NewReader(payload))
 			context.Request.Header.Set("Content-Type", "application/json")
 
 			UpdateModelDeploymentSettings(context)
@@ -62,12 +74,16 @@ func TestUpdateModelDeploymentSettingsAPIKeySemantics(t *testing.T) {
 
 func TestFlyte2ConnectionAcceptsZeroModels(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		assert.Equal(t, "/v2/api/aione/models", request.URL.Path)
 		assert.Equal(t, "aione", request.URL.Query().Get("project"))
 		assert.Equal(t, "development", request.URL.Query().Get("domain"))
 		assert.Equal(t, "connection-key", request.Header.Get("X-API-Key"))
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":200,"data":{"items":[],"total":0,"page":1,"pageSize":1}}`))
+		if strings.HasSuffix(request.URL.Path, "/context") {
+			_, _ = w.Write([]byte(`{"status":200,"data":{"org":"org","project":"aione","domain":"development"}}`))
+		} else {
+			assert.Equal(t, "/v2/api/aione/models", request.URL.Path)
+			_, _ = w.Write([]byte(`{"status":200,"data":{"items":[],"total":0,"page":1,"pageSize":1}}`))
+		}
 	}))
 	defer server.Close()
 	setupDeploymentControllerTest(t, flyteDeploymentSettings{
@@ -196,11 +212,12 @@ func setupDeploymentControllerTest(t *testing.T, settings flyteDeploymentSetting
 	common.OptionMapRWMutex.Lock()
 	previousOptions := common.OptionMap
 	common.OptionMap = map[string]string{
-		flyteEnabledKey: strconv.FormatBool(settings.Enabled),
-		flyteBaseURLKey: settings.BaseURL,
-		flyteProjectKey: settings.Project,
-		flyteDomainKey:  settings.Domain,
-		flyteAPIKeyKey:  settings.APIKey,
+		flyteEnabledKey:            strconv.FormatBool(settings.Enabled),
+		flyteBaseURLKey:            settings.BaseURL,
+		flyteProjectKey:            settings.Project,
+		flyteDomainKey:             settings.Domain,
+		flyteAPIKeyKey:             settings.APIKey,
+		flytePublicationEnabledKey: strconv.FormatBool(settings.PublicationEnabled),
 	}
 	common.OptionMapRWMutex.Unlock()
 	model.DB = database

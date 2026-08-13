@@ -8,7 +8,7 @@ License, or (at your option) any later version.
 */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -38,6 +38,7 @@ import {
   deploymentStatusName,
   useDeploymentsColumns,
 } from './deployments-columns'
+import { PublicationDialog } from './dialogs/publication-dialog'
 import { UpdateConfigDialog } from './dialogs/update-config-dialog'
 import { ViewDetailsDialog } from './dialogs/view-details-dialog'
 import { ViewLogsDialog } from './dialogs/view-logs-dialog'
@@ -49,11 +50,17 @@ export function DeploymentsTable() {
   const queryClient = useQueryClient()
   const isMobile = useMediaQuery('(max-width: 640px)')
   const [dialog, setDialog] = useState<{
-    type: 'logs' | 'details' | 'update'
+    type: 'logs' | 'details' | 'update' | 'publication'
     id: string
   }>()
   const [deleteTarget, setDeleteTarget] = useState<Deployment>()
   const [deleting, setDeleting] = useState(false)
+  const routeSearch = route.useSearch()
+  useEffect(() => {
+    if (routeSearch.deployment) {
+      setDialog({ type: 'publication', id: routeSearch.deployment })
+    }
+  }, [routeSearch.deployment])
   const {
     globalFilter,
     onGlobalFilterChange,
@@ -63,7 +70,7 @@ export function DeploymentsTable() {
     onPaginationChange,
     ensurePageInRange,
   } = useTableUrlState({
-    search: route.useSearch(),
+    search: routeSearch,
     navigate: route.useNavigate(),
     pagination: {
       pageKey: 'dPage',
@@ -111,6 +118,7 @@ export function DeploymentsTable() {
     onViewLogs: (id) => setDialog({ type: 'logs', id }),
     onViewDetails: (id) => setDialog({ type: 'details', id }),
     onUpdate: (id) => setDialog({ type: 'update', id }),
+    onPublication: (id) => setDialog({ type: 'publication', id }),
     onStart: (deployment) =>
       void runAction(() => startDeployment(deployment.id)),
     onStop: (deployment) => void runAction(() => stopDeployment(deployment.id)),
@@ -192,6 +200,11 @@ export function DeploymentsTable() {
         open={dialog?.type === 'update'}
         onOpenChange={(open) => !open && setDialog(undefined)}
         deploymentId={dialog?.type === 'update' ? dialog.id : null}
+      />
+      <PublicationDialog
+        open={dialog?.type === 'publication'}
+        onOpenChange={(open) => !open && setDialog(undefined)}
+        deploymentId={dialog?.type === 'publication' ? dialog.id : null}
       />
       <AlertDialog
         open={Boolean(deleteTarget)}

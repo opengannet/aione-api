@@ -22,6 +22,27 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
+	service.RegisterSystemTaskHandler(flytePublicationReconcileHandler{})
+}
+
+type flytePublicationReconcileHandler struct{}
+
+func (flytePublicationReconcileHandler) Type() string {
+	return model.SystemTaskTypeFlytePublicationReconcile
+}
+func (flytePublicationReconcileHandler) Enabled() bool {
+	settings := readFlyteDeploymentSettings()
+	return settings.Enabled && settings.Configured
+}
+func (flytePublicationReconcileHandler) Interval() time.Duration { return 15 * time.Second }
+func (flytePublicationReconcileHandler) NewPayload() any         { return nil }
+func (flytePublicationReconcileHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	reconciled, unpublished, err := reconcileAllFlytePublications(ctx, false)
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, map[string]int{"reconciled": reconciled, "unpublished": unpublished}, nil)
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and

@@ -224,6 +224,7 @@ export function ModelMutateDrawer({
       'model_deployment.flyte2.project': 'aione',
       'model_deployment.flyte2.domain': 'development',
       'model_deployment.flyte2.api_key': '',
+      'model_deployment.flyte2.publication_enabled': false,
     }
     return getOptionValue(systemOptionsData.data, defaultModelSettings)
   }, [systemOptionsData])

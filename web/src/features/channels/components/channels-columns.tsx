@@ -633,6 +633,19 @@ export function useChannelsColumns(
                     className='font-medium'
                     maxWidth='max-w-full'
                   />
+                  {channel.flyte2_managed ? (
+                    <a
+                      href='/models/deployments'
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <StatusBadge
+                        label={t('Flyte2 managed')}
+                        variant='blue'
+                        size='sm'
+                        copyable={false}
+                      />
+                    </a>
+                  ) : null}
                   {isPassThrough && (
                     <TooltipProvider delay={100}>
                       <Tooltip>

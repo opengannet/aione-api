@@ -835,6 +835,10 @@ func ApplyChannelUpstreamModelUpdates(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if model.IsFlyteManagedChannel(req.ID) {
+		common.ApiErrorMsg(c, "upstream model synchronization is managed by Flyte2 publication reconciliation")
+		return
+	}
 	beforeSettings := channel.GetOtherSettings()
 	ignoredModels := intersectModelNames(req.IgnoreModels, beforeSettings.UpstreamModelUpdateLastDetectedModels)
 
@@ -889,6 +893,10 @@ func DetectChannelUpstreamModelUpdates(c *gin.Context) {
 	channel, err := model.GetChannelById(req.ID, true)
 	if err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	if model.IsFlyteManagedChannel(req.ID) {
+		common.ApiErrorMsg(c, "upstream model synchronization is managed by Flyte2 publication reconciliation")
 		return
 	}
 

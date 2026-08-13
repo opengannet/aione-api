@@ -372,11 +372,22 @@ func DeleteTokenById(id int, userId int) (err error) {
 		return errors.New("id 或 userId 为空！")
 	}
 	token := Token{Id: id, UserId: userId}
-	err = DB.Where(token).First(&token).Error
-	if err != nil {
-		return err
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockForUpdate(tx).Where(token).First(&token).Error; err != nil {
+			return err
+		}
+		if err := UnbindFlyteTokensWithTx(tx, []int{id}); err != nil {
+			return err
+		}
+		return tx.Delete(&token).Error
+	})
+	if err == nil {
+		InitChannelCache()
+		if common.RedisEnabled {
+			gopool.Go(func() { _ = cacheDeleteToken(token.Key) })
+		}
 	}
-	return token.Delete()
+	return err
 }
 
 func IncreaseTokenQuota(tokenId int, key string, quota int) (err error) {
@@ -455,7 +466,15 @@ func BatchDeleteTokens(ids []int, userId int) (int, error) {
 	tx := DB.Begin()
 
 	var tokens []Token
-	if err := tx.Where("user_id = ? AND id IN (?)", userId, ids).Find(&tokens).Error; err != nil {
+	if err := lockForUpdate(tx).Where("user_id = ? AND id IN (?)", userId, ids).Find(&tokens).Error; err != nil {
+		tx.Rollback()
+		return 0, err
+	}
+	actualIDs := make([]int, 0, len(tokens))
+	for _, token := range tokens {
+		actualIDs = append(actualIDs, token.Id)
+	}
+	if err := UnbindFlyteTokensWithTx(tx, actualIDs); err != nil {
 		tx.Rollback()
 		return 0, err
 	}
@@ -468,6 +487,7 @@ func BatchDeleteTokens(ids []int, userId int) (int, error) {
 	if err := tx.Commit().Error; err != nil {
 		return 0, err
 	}
+	InitChannelCache()
 
 	if common.RedisEnabled {
 		gopool.Go(func() {
@@ -502,6 +522,24 @@ func InvalidateUserTokensCache(userId int) error {
 	if err := DB.Unscoped().
 		Select("id", commonKeyCol).
 		Where("user_id = ?", userId).
+		Find(&tokens).Error; err != nil {
+		return err
+	}
+	return invalidateTokensCache(tokens)
+}
+
+// InvalidateTokensCacheByIDs removes committed token snapshots after a
+// publication transaction changes model permissions. Deleting instead of
+// overwriting avoids publishing state before the surrounding transaction has
+// committed and lets the next request load the authoritative row.
+func InvalidateTokensCacheByIDs(tokenIDs []int) error {
+	if !common.RedisEnabled || len(tokenIDs) == 0 {
+		return nil
+	}
+	var tokens []Token
+	if err := DB.Unscoped().
+		Select("id", commonKeyCol).
+		Where("id IN ?", tokenIDs).
 		Find(&tokens).Error; err != nil {
 		return err
 	}

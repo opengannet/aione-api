@@ -104,6 +104,7 @@ const (
 
 const (
 	advancedCustomEndpointPathOpenAIChat             = "/v1/chat/completions"
+	advancedCustomEndpointPathOpenAICompletions      = "/v1/completions"
 	advancedCustomEndpointPathOpenAIResponses        = "/v1/responses"
 	advancedCustomEndpointPathOpenAIResponsesCompact = "/v1/responses/compact"
 	advancedCustomEndpointPathClaudeMessages         = "/v1/messages"
@@ -198,7 +199,7 @@ func (c *AdvancedCustomConfig) SupportedEndpointTypesForModel(model string) []co
 
 func advancedCustomEndpointTypeFromIncomingPath(incomingPath string) (constant.EndpointType, bool) {
 	switch incomingPath {
-	case advancedCustomEndpointPathOpenAIChat:
+	case advancedCustomEndpointPathOpenAIChat, advancedCustomEndpointPathOpenAICompletions:
 		return constant.EndpointTypeOpenAI, true
 	case advancedCustomEndpointPathOpenAIResponses:
 		return constant.EndpointTypeOpenAIResponse, true

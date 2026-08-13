@@ -46,6 +46,12 @@ func TestNewClientRejectsUnsafeURLs(t *testing.T) {
 	}
 }
 
+func TestNormalizeBaseURLProducesStableScopeValue(t *testing.T) {
+	normalized, err := NormalizeBaseURL(" HTTPS://FLYTE.EXAMPLE:443/console/v2/ ")
+	require.NoError(t, err)
+	assert.Equal(t, "https://flyte.example/console/v2", normalized)
+}
+
 func TestAPIErrorDoesNotExposeAPIKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

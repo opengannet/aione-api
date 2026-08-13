@@ -325,6 +325,43 @@ export interface Deployment {
   url: string
   createdAt: string
   updatedAt: string
+  publication?: FlytePublication
+}
+
+export interface FlytePublicationBinding {
+  token_id: number
+  token_name: string
+  token_key: string
+  managed_permission_added: boolean
+  restricted: boolean
+}
+
+export interface FlytePublication {
+  id: number
+  deployment_id: string
+  model_code: string
+  endpoint: string
+  upstream_model: string
+  phase: 'pending' | 'published' | 'drifted' | 'cleanup_pending'
+  reason_code: string
+  last_error: string
+  access_group: string
+  organization: string
+  channel_id: number
+  pricing_configured: boolean
+  bindings: FlytePublicationBinding[]
+  warning?: string
+}
+
+export interface NewPublicationToken {
+  user_id: number
+  name: string
+  expired_time: number
+  remain_quota: number
+  unlimited_quota: boolean
+  model_limits_enabled: boolean
+  allow_ips: string
+  cross_group_retry: boolean
 }
 
 export interface DeploymentResourceDefinition {
@@ -386,6 +423,7 @@ export interface DeploymentSettingsResponse {
     project: string
     domain: string
     configured: boolean
+    publication_enabled: boolean
   }
 }
 

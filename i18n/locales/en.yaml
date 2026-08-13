@@ -221,6 +221,10 @@ deployment.settings_required: "Base URL, project, domain, and API key are requir
 deployment.save_failed: "Failed to save Flyte2 deployment settings"
 deployment.id_required: "Deployment ID is required"
 deployment.invalid_payload: "Invalid request payload"
+deployment.publication_disabled: "Flyte2 model publication is disabled"
+deployment.pricing_required: "Model pricing must be configured before publication"
+deployment.scope_locked: "Flyte2 scope cannot be changed while gateways or publications exist"
+deployment.key_clear_disabled: "The Flyte2 API key can only be cleared while deployment is disabled"
 
 # Performance messages
 performance.disk_cache_cleared: "Inactive disk cache has been cleared"

@@ -56,7 +56,9 @@ type Channel struct {
 	OtherSettings string `json:"settings" gorm:"column:settings"` // 其他设置，存储azure版本等不需要检索的信息，详见dto.ChannelOtherSettings
 
 	// cache info
-	Keys []string `json:"-" gorm:"-"`
+	Keys           []string `json:"-" gorm:"-"`
+	Flyte2Managed  bool     `json:"flyte2_managed" gorm:"-"`
+	FlyteGatewayID int64    `json:"flyte_gateway_id,omitempty" gorm:"-"`
 }
 
 type ChannelInfo struct {
@@ -878,9 +880,14 @@ func DeleteChannelByStatus(status int64) (int64, error) {
 	return result.RowsAffected, result.Error
 }
 
-func DeleteDisabledChannel() (int64, error) {
-	result := DB.Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Delete(&Channel{})
-	return result.RowsAffected, result.Error
+func DeleteDisabledChannel() (int64, int64, error) {
+	statusQuery := DB.Model(&Channel{}).Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled)
+	var total int64
+	if err := statusQuery.Count(&total).Error; err != nil {
+		return 0, 0, err
+	}
+	result := DB.Where("(status = ? or status = ?) AND id NOT IN (?)", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled, DB.Model(&FlyteGateway{}).Select("channel_id")).Delete(&Channel{})
+	return result.RowsAffected, total - result.RowsAffected, result.Error
 }
 
 func GetPaginatedTags(offset int, limit int) ([]*string, error) {

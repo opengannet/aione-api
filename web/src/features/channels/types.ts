@@ -71,6 +71,8 @@ export const channelSchema = z.object({
     multi_key_mode: 'random',
   }),
   settings: z.string().default('{}'), // other_settings JSON
+  flyte2_managed: z.boolean().default(false),
+  flyte_gateway_id: z.number().optional(),
 })
 
 export type Channel = z.infer<typeof channelSchema>

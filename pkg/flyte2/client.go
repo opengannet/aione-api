@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -95,6 +96,7 @@ type ModelSummary struct {
 	URL              string `json:"url"`
 	CreatedAt        string `json:"createdAt"`
 	UpdatedAt        string `json:"updatedAt"`
+	Publication      any    `json:"publication,omitempty"`
 }
 
 type ModelCachePVC struct {
@@ -128,6 +130,12 @@ type ModelList struct {
 	PageSize int            `json:"pageSize"`
 }
 
+type Context struct {
+	Org     string `json:"org"`
+	Project string `json:"project"`
+	Domain  string `json:"domain"`
+}
+
 type LogLine struct {
 	Timestamp string `json:"timestamp"`
 	Message   string `json:"message"`
@@ -141,26 +149,51 @@ type LogPage struct {
 }
 
 func NewClient(baseURL, apiKey string) (*Client, error) {
-	parsed, err := url.Parse(strings.TrimSpace(baseURL))
-	if err != nil || parsed.Host == "" {
+	normalizedBaseURL, err := NormalizeBaseURL(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := url.Parse(normalizedBaseURL)
+	if err != nil {
 		return nil, errors.New("invalid Flyte2 base URL")
 	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return nil, errors.New("Flyte2 base URL must use HTTP or HTTPS")
-	}
-	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, errors.New("Flyte2 base URL must not contain credentials, query, or fragment")
-	}
-	parsed.Path = strings.TrimRight(parsed.EscapedPath(), "/")
-	if !strings.HasSuffix(parsed.Path, "/v2") {
-		return nil, errors.New("Flyte2 base URL must end with /v2")
-	}
-	parsed.RawPath = ""
 	return &Client{
 		baseURL: parsed,
 		apiKey:  strings.TrimSpace(apiKey),
 		http:    &http.Client{Timeout: defaultTimeout},
 	}, nil
+}
+
+func NormalizeBaseURL(baseURL string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || parsed.Host == "" {
+		return "", errors.New("invalid Flyte2 base URL")
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", errors.New("Flyte2 base URL must use HTTP or HTTPS")
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("Flyte2 base URL must not contain credentials, query, or fragment")
+	}
+	hostname := strings.ToLower(parsed.Hostname())
+	port := parsed.Port()
+	if (parsed.Scheme == "https" && port == "443") || (parsed.Scheme == "http" && port == "80") {
+		port = ""
+	}
+	if port != "" {
+		parsed.Host = net.JoinHostPort(hostname, port)
+	} else if strings.Contains(hostname, ":") {
+		parsed.Host = "[" + hostname + "]"
+	} else {
+		parsed.Host = hostname
+	}
+	parsed.Path = strings.TrimRight(parsed.EscapedPath(), "/")
+	if !strings.HasSuffix(parsed.Path, "/v2") {
+		return "", errors.New("Flyte2 base URL must end with /v2")
+	}
+	parsed.RawPath = ""
+	return parsed.String(), nil
 }
 
 func (c *Client) ListModels(ctx context.Context, project, domain, keyword, status string, page, pageSize int) (*ModelList, error) {
@@ -177,6 +210,11 @@ func (c *Client) ListModels(ctx context.Context, project, domain, keyword, statu
 		query.Set("status", status)
 	}
 	return request[ModelList](c, ctx, http.MethodGet, "/api/aione/models?"+query.Encode(), nil)
+}
+
+func (c *Client) GetContext(ctx context.Context, project, domain string) (*Context, error) {
+	query := url.Values{"project": {project}, "domain": {domain}}
+	return request[Context](c, ctx, http.MethodGet, "/api/aione/context?"+query.Encode(), nil)
 }
 
 func (c *Client) CreateModel(ctx context.Context, requestBody CreateModelRequest) (*ModelSummary, error) {

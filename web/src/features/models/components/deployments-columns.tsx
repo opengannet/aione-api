@@ -7,7 +7,15 @@ published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
 import type { ColumnDef } from '@tanstack/react-table'
-import { FileText, Info, Pencil, Play, Square, Trash2 } from 'lucide-react'
+import {
+  FileText,
+  Info,
+  KeyRound,
+  Pencil,
+  Play,
+  Square,
+  Trash2,
+} from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -50,6 +58,7 @@ export function useDeploymentsColumns(opts: {
   onViewLogs: (id: string) => void
   onViewDetails: (id: string) => void
   onUpdate: (id: string) => void
+  onPublication: (id: string) => void
   onStart: (deployment: Deployment) => void
   onStop: (deployment: Deployment) => void
   onDelete: (deployment: Deployment) => void
@@ -116,6 +125,26 @@ export function useDeploymentsColumns(opts: {
       ),
     },
     {
+      id: 'publication',
+      header: t('Publication'),
+      cell: ({ row }) => {
+        let variant: 'success' | 'warning' | 'neutral' = 'neutral'
+        if (row.original.publication?.phase === 'published') {
+          variant = 'success'
+        } else if (row.original.publication) {
+          variant = 'warning'
+        }
+        return (
+          <StatusBadge
+            label={t(row.original.publication?.phase || 'Not published')}
+            variant={variant}
+            size='sm'
+            copyable={false}
+          />
+        )
+      },
+    },
+    {
       id: 'actions',
       header: t('Actions'),
       enableSorting: false,
@@ -167,6 +196,14 @@ export function useDeploymentsColumns(opts: {
                 {t('Edit')}
                 <DropdownMenuShortcut>
                   <Pencil size={16} />
+                </DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => opts.onPublication(deployment.id)}
+              >
+                {t('Publication and API keys')}
+                <DropdownMenuShortcut>
+                  <KeyRound size={16} />
                 </DropdownMenuShortcut>
               </DropdownMenuItem>
               {stateAction}

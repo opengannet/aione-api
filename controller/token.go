@@ -289,6 +289,10 @@ func UpdateToken(c *gin.Context) {
 	if statusOnly != "" {
 		cleanToken.Status = token.Status
 	} else {
+		if err := model.ValidateFlyteBoundTokenUpdate(cleanToken.Id, token.Group, token.ModelLimitsEnabled, token.ModelLimits); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 		// If you add more fields, please also update token.Update()
 		cleanToken.Name = token.Name
 		cleanToken.ExpiredTime = token.ExpiredTime

@@ -64,4 +64,6 @@ export const deploymentsQueryKeys = {
   }) => [...deploymentsQueryKeys.lists(), filters] as const,
   detail: (id: string | number) =>
     [...deploymentsQueryKeys.all, 'detail', id] as const,
+  publication: (id: string | number) =>
+    [...deploymentsQueryKeys.all, 'publication', id] as const,
 }

@@ -21,6 +21,13 @@ var channelsIDM map[int]*Channel                     // all channels include dis
 // channel2advancedCustomConfig caches parsed Advanced Custom (type 58) configs so
 // path-aware selection avoids re-parsing JSON per request. Refreshed on full sync.
 var channel2advancedCustomConfig map[int]*dto.AdvancedCustomConfig
+
+type flyteManagedRoute struct {
+	BaseURL      string
+	ModelMapping string
+}
+
+var channel2flyteManagedRoutes map[int]map[string]flyteManagedRoute
 var channelSyncLock sync.RWMutex
 
 func InitChannelCache() {
@@ -30,6 +37,7 @@ func InitChannelCache() {
 	}
 	newChannelId2channel := make(map[int]*Channel)
 	newChannel2advancedCustomConfig := make(map[int]*dto.AdvancedCustomConfig)
+	newChannel2flyteManagedRoutes := make(map[int]map[string]flyteManagedRoute)
 	var channels []*Channel
 	DB.Find(&channels)
 	for _, channel := range channels {
@@ -42,6 +50,29 @@ func InitChannelCache() {
 	}
 	var abilities []*Ability
 	DB.Find(&abilities)
+	var managedRoutes []struct {
+		ChannelID     int
+		ModelCode     string
+		Endpoint      string
+		UpstreamModel string
+	}
+	if flytePublicationTablesReady(DB) {
+		DB.Table("flyte_publications").
+			Select("flyte_gateways.channel_id, flyte_publications.model_code, flyte_publications.endpoint, flyte_publications.upstream_model").
+			Joins("JOIN flyte_gateways ON flyte_gateways.id = flyte_publications.gateway_id").
+			Where("flyte_publications.phase IN ? AND flyte_publications.endpoint <> '' AND flyte_publications.upstream_model <> ''", []string{FlytePublicationPhasePublished, FlytePublicationPhaseDrifted}).
+			Scan(&managedRoutes)
+	}
+	for _, route := range managedRoutes {
+		mapping, err := common.Marshal(map[string]string{route.ModelCode: route.UpstreamModel})
+		if err != nil {
+			continue
+		}
+		if newChannel2flyteManagedRoutes[route.ChannelID] == nil {
+			newChannel2flyteManagedRoutes[route.ChannelID] = make(map[string]flyteManagedRoute)
+		}
+		newChannel2flyteManagedRoutes[route.ChannelID][route.ModelCode] = flyteManagedRoute{BaseURL: route.Endpoint, ModelMapping: string(mapping)}
+	}
 	groups := make(map[string]bool)
 	for _, ability := range abilities {
 		groups[ability.Group] = true
@@ -56,8 +87,19 @@ func InitChannelCache() {
 		}
 		groups := strings.Split(channel.Group, ",")
 		for _, group := range groups {
+			group = strings.TrimSpace(group)
+			if group == "" {
+				continue
+			}
 			models := strings.Split(channel.Models, ",")
 			for _, model := range models {
+				model = strings.TrimSpace(model)
+				if model == "" {
+					continue
+				}
+				if newGroup2model2channels[group] == nil {
+					newGroup2model2channels[group] = make(map[string][]int)
+				}
 				if _, ok := newGroup2model2channels[group][model]; !ok {
 					newGroup2model2channels[group][model] = make([]int, 0)
 				}
@@ -94,6 +136,7 @@ func InitChannelCache() {
 	}
 	channelsIDM = newChannelId2channel
 	channel2advancedCustomConfig = newChannel2advancedCustomConfig
+	channel2flyteManagedRoutes = newChannel2flyteManagedRoutes
 	channelSyncLock.Unlock()
 	// Lock ordering: InvalidatePricingCache acquires updatePricingLock, and
 	// GetPricing (holding updatePricingLock) nests channelSyncLock.RLock via
@@ -101,6 +144,33 @@ func InitChannelCache() {
 	// invalidating the pricing cache, otherwise the reversed order deadlocks.
 	InvalidatePricingCache()
 	common.SysLog("channels synced from database")
+}
+
+func GetFlyteManagedRoute(channelID int, modelCode string) (string, string, bool) {
+	modelCode = strings.TrimSpace(modelCode)
+	if common.MemoryCacheEnabled {
+		channelSyncLock.RLock()
+		defer channelSyncLock.RUnlock()
+		route, ok := channel2flyteManagedRoutes[channelID][modelCode]
+		return route.BaseURL, route.ModelMapping, ok
+	}
+	var route struct {
+		Endpoint      string
+		UpstreamModel string
+	}
+	err := DB.Table("flyte_publications").
+		Select("flyte_publications.endpoint, flyte_publications.upstream_model").
+		Joins("JOIN flyte_gateways ON flyte_gateways.id = flyte_publications.gateway_id").
+		Where("flyte_gateways.channel_id = ? AND flyte_publications.model_code = ? AND flyte_publications.phase IN ?", channelID, modelCode, []string{FlytePublicationPhasePublished, FlytePublicationPhaseDrifted}).
+		Take(&route).Error
+	if err != nil || route.Endpoint == "" || route.UpstreamModel == "" {
+		return "", "", false
+	}
+	mapping, err := common.Marshal(map[string]string{modelCode: route.UpstreamModel})
+	if err != nil {
+		return "", "", false
+	}
+	return route.Endpoint, string(mapping), true
 }
 
 func SyncChannelCache(frequency int) {

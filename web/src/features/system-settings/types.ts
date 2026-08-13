@@ -245,6 +245,7 @@ export type ModelSettings = {
   'model_deployment.flyte2.project': string
   'model_deployment.flyte2.domain': string
   'model_deployment.flyte2.api_key': string
+  'model_deployment.flyte2.publication_enabled': boolean
 }
 
 export type BillingSettings = {

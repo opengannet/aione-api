@@ -83,6 +83,36 @@ export function ViewDetailsDialog({
                 </a>
               ) : null}
             </Section>
+            {detail.publication ? (
+              <Section
+                title={t('Publication')}
+                rows={[
+                  [t('Publication status'), detail.publication.phase],
+                  [t('Reason'), detail.publication.reason_code || '-'],
+                  [t('Fixed access group'), detail.publication.access_group],
+                  [
+                    t('Gateway channel ID'),
+                    String(detail.publication.channel_id),
+                  ],
+                  [
+                    t('Upstream model'),
+                    detail.publication.upstream_model || '-',
+                  ],
+                  [
+                    t('Bound API keys'),
+                    detail.publication.bindings
+                      .map((binding) => binding.token_name)
+                      .join(', ') || '-',
+                  ],
+                  [
+                    t('Pricing'),
+                    detail.publication.pricing_configured
+                      ? t('Configured')
+                      : t('Missing'),
+                  ],
+                ]}
+              />
+            ) : null}
             <Section
               title={t('Configuration')}
               rows={[

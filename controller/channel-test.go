@@ -92,6 +92,20 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 			localErr: fmt.Errorf("%s channel test is not supported", channelTypeName),
 		}
 	}
+	if model.IsFlyteManagedChannel(channel.Id) {
+		endpoint, available := model.GetFlyteManagedHealthEndpoint(channel.Id)
+		if !available {
+			return testResult{localErr: errors.New("Flyte2 managed channel has no active publication endpoint")}
+		}
+		models, err := fetchUpstreamModels(ctx, endpoint)
+		if err != nil {
+			return testResult{localErr: err}
+		}
+		if len(models) == 0 {
+			return testResult{localErr: errors.New("Flyte2 managed endpoint returned no models")}
+		}
+		return testResult{}
+	}
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 

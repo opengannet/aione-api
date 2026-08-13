@@ -95,8 +95,10 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
     ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
   )
+  const canMutateDefinition = canEditSensitive && !channel.flyte2_managed
 
   const handleEdit = () => {
+    if (!canMutateDefinition) return
     setCurrentRow(channel)
     setOpen('update-channel')
   }
@@ -171,6 +173,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
               <Button
                 variant='ghost'
                 size='icon-sm'
+                disabled={!canMutateDefinition}
                 onClick={(e) => {
                   e.stopPropagation()
                   handleEdit()
@@ -265,7 +268,10 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align='end' className='w-48'>
           {layout === 'card' && (
-            <DropdownMenuItem onClick={handleEdit}>
+            <DropdownMenuItem
+              disabled={!canMutateDefinition}
+              onClick={handleEdit}
+            >
               {t('Edit')}
               <DropdownMenuShortcut>
                 <Pencil size={16} />
@@ -338,8 +344,8 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
 
           {/* Copy Channel */}
           <DropdownMenuItem
-            disabled={!canEditSensitive}
-            onClick={canEditSensitive ? handleCopy : undefined}
+            disabled={!canMutateDefinition}
+            onClick={canMutateDefinition ? handleCopy : undefined}
           >
             {t('Copy Channel')}
             <DropdownMenuShortcut>
@@ -353,7 +359,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           )}
 
           {/* Manage Keys (only for multi-key channels) */}
-          {isMultiKey && (
+          {isMultiKey && !channel.flyte2_managed && (
             <DropdownMenuItem onClick={handleManageKeys}>
               {t('Manage Keys')}
               <DropdownMenuShortcut>
@@ -366,10 +372,10 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
 
           {/* Delete */}
           <DropdownMenuItem
-            disabled={!canEditSensitive}
+            disabled={!canMutateDefinition}
             onSelect={(e) => {
               e.preventDefault()
-              if (!canEditSensitive) return
+              if (!canMutateDefinition) return
               setDeleteConfirmOpen(true)
             }}
             className='text-destructive focus:text-destructive'
@@ -393,7 +399,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         confirmText={t('Delete')}
         destructive
         handleConfirm={() => {
-          if (!canEditSensitive) return
+          if (!canMutateDefinition) return
           handleDeleteChannel(channel.id, queryClient)
           setDeleteConfirmOpen(false)
         }}

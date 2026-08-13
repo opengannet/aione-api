@@ -10,43 +10,48 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/flyte2"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 const (
-	flyteEnabledKey = "model_deployment.flyte2.enabled"
-	flyteBaseURLKey = "model_deployment.flyte2.base_url"
-	flyteProjectKey = "model_deployment.flyte2.project"
-	flyteDomainKey  = "model_deployment.flyte2.domain"
-	flyteAPIKeyKey  = "model_deployment.flyte2.api_key"
+	flyteEnabledKey            = "model_deployment.flyte2.enabled"
+	flyteBaseURLKey            = "model_deployment.flyte2.base_url"
+	flyteProjectKey            = "model_deployment.flyte2.project"
+	flyteDomainKey             = "model_deployment.flyte2.domain"
+	flyteAPIKeyKey             = "model_deployment.flyte2.api_key"
+	flytePublicationEnabledKey = "model_deployment.flyte2.publication_enabled"
 )
 
 type flyteDeploymentSettings struct {
-	Enabled    bool   `json:"enabled"`
-	BaseURL    string `json:"base_url"`
-	Project    string `json:"project"`
-	Domain     string `json:"domain"`
-	APIKey     string `json:"-"`
-	Configured bool   `json:"configured"`
+	Enabled            bool   `json:"enabled"`
+	BaseURL            string `json:"base_url"`
+	Project            string `json:"project"`
+	Domain             string `json:"domain"`
+	APIKey             string `json:"-"`
+	Configured         bool   `json:"configured"`
+	PublicationEnabled bool   `json:"publication_enabled"`
 }
 
 type updateFlyteDeploymentSettingsRequest struct {
-	Enabled     *bool  `json:"enabled"`
-	BaseURL     string `json:"base_url"`
-	Project     string `json:"project"`
-	Domain      string `json:"domain"`
-	APIKey      string `json:"api_key"`
-	ClearAPIKey bool   `json:"clear_api_key"`
+	Enabled            *bool  `json:"enabled"`
+	BaseURL            string `json:"base_url"`
+	Project            string `json:"project"`
+	Domain             string `json:"domain"`
+	APIKey             string `json:"api_key"`
+	ClearAPIKey        bool   `json:"clear_api_key"`
+	PublicationEnabled *bool  `json:"publication_enabled"`
 }
 
 func readFlyteDeploymentSettings() flyteDeploymentSettings {
 	common.OptionMapRWMutex.RLock()
 	defer common.OptionMapRWMutex.RUnlock()
 	settings := flyteDeploymentSettings{
-		Enabled: common.OptionMap[flyteEnabledKey] == "true",
-		BaseURL: strings.TrimSpace(common.OptionMap[flyteBaseURLKey]),
-		Project: strings.TrimSpace(common.OptionMap[flyteProjectKey]),
-		Domain:  strings.TrimSpace(common.OptionMap[flyteDomainKey]),
-		APIKey:  strings.TrimSpace(common.OptionMap[flyteAPIKeyKey]),
+		Enabled:            common.OptionMap[flyteEnabledKey] == "true",
+		BaseURL:            strings.TrimSpace(common.OptionMap[flyteBaseURLKey]),
+		Project:            strings.TrimSpace(common.OptionMap[flyteProjectKey]),
+		Domain:             strings.TrimSpace(common.OptionMap[flyteDomainKey]),
+		APIKey:             strings.TrimSpace(common.OptionMap[flyteAPIKeyKey]),
+		PublicationEnabled: common.OptionMap[flytePublicationEnabledKey] == "true",
 	}
 	settings.Configured = settings.APIKey != ""
 	return settings
@@ -55,12 +60,13 @@ func readFlyteDeploymentSettings() flyteDeploymentSettings {
 func GetModelDeploymentSettings(c *gin.Context) {
 	settings := readFlyteDeploymentSettings()
 	common.ApiSuccess(c, gin.H{
-		"provider":   "flyte2",
-		"enabled":    settings.Enabled,
-		"base_url":   settings.BaseURL,
-		"project":    settings.Project,
-		"domain":     settings.Domain,
-		"configured": settings.Configured,
+		"provider":            "flyte2",
+		"enabled":             settings.Enabled,
+		"base_url":            settings.BaseURL,
+		"project":             settings.Project,
+		"domain":              settings.Domain,
+		"configured":          settings.Configured,
+		"publication_enabled": settings.PublicationEnabled,
 	})
 }
 
@@ -79,27 +85,64 @@ func UpdateModelDeploymentSettings(c *gin.Context) {
 	project := strings.TrimSpace(request.Project)
 	domain := strings.TrimSpace(request.Domain)
 	apiKey := current.APIKey
+	publicationEnabled := current.PublicationEnabled
+	if request.PublicationEnabled != nil {
+		publicationEnabled = *request.PublicationEnabled
+	}
 	if request.ClearAPIKey {
 		apiKey = ""
 	} else if strings.TrimSpace(request.APIKey) != "" {
 		apiKey = strings.TrimSpace(request.APIKey)
 	}
 	if baseURL != "" {
-		if _, err := flyte2.NewClient(baseURL, apiKey); err != nil {
+		normalizedBaseURL, err := flyte2.NormalizeBaseURL(baseURL)
+		if err != nil {
 			common.ApiError(c, err)
 			return
 		}
+		baseURL = normalizedBaseURL
 	}
 	if enabled && (baseURL == "" || project == "" || domain == "" || apiKey == "") {
 		common.ApiErrorI18n(c, i18n.MsgDeploymentSettingsRequired)
 		return
 	}
+	if current.BaseURL != "" && (baseURL != current.BaseURL || project != current.Project || domain != current.Domain) {
+		hasRecords, err := model.HasFlytePublicationRecords()
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if hasRecords {
+			common.ApiErrorI18n(c, i18n.MsgDeploymentScopeLocked)
+			return
+		}
+	}
+	if request.ClearAPIKey && enabled {
+		common.ApiErrorI18n(c, i18n.MsgDeploymentKeyClearDisabled)
+		return
+	}
+	if apiKey != current.APIKey && apiKey != "" {
+		candidate, err := flyte2.NewClient(baseURL, apiKey)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if _, err = candidate.GetContext(c.Request.Context(), project, domain); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if _, err = candidate.ListModels(c.Request.Context(), project, domain, "", "", 1, 1); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
 	if err := model.UpdateOptionsBulk(map[string]string{
-		flyteEnabledKey: strconv.FormatBool(enabled),
-		flyteBaseURLKey: baseURL,
-		flyteProjectKey: project,
-		flyteDomainKey:  domain,
-		flyteAPIKeyKey:  apiKey,
+		flyteEnabledKey:            strconv.FormatBool(enabled),
+		flyteBaseURLKey:            baseURL,
+		flyteProjectKey:            project,
+		flyteDomainKey:             domain,
+		flyteAPIKeyKey:             apiKey,
+		flytePublicationEnabledKey: strconv.FormatBool(publicationEnabled),
 	}); err != nil {
 		common.ApiErrorI18n(c, i18n.MsgDeploymentSaveFailed)
 		return
@@ -137,12 +180,17 @@ func TestFlyte2Connection(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	contextResult, err := client.GetContext(c.Request.Context(), settings.Project, settings.Domain)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	result, err := client.ListModels(c.Request.Context(), settings.Project, settings.Domain, "", "", 1, 1)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"connected": true, "model_count": result.Total})
+	common.ApiSuccess(c, gin.H{"connected": true, "model_count": result.Total, "org": contextResult.Org})
 }
 
 func GetAllDeployments(c *gin.Context) {
@@ -162,6 +210,11 @@ func GetAllDeployments(c *gin.Context) {
 		c.Request.Context(), settings.Project, settings.Domain,
 		strings.TrimSpace(c.Query("keyword")), strings.TrimSpace(c.Query("status")), page, pageSize,
 	)
+	if err == nil {
+		for index := range result.Items {
+			attachDeploymentPublication(&result.Items[index])
+		}
+	}
 	respondDeployment(c, result, err)
 }
 
@@ -188,6 +241,9 @@ func GetDeployment(c *gin.Context) {
 		return
 	}
 	result, err := client.GetModel(c.Request.Context(), id, settings.Project, settings.Domain)
+	if err == nil {
+		attachDeploymentPublication(&result.ModelSummary)
+	}
 	respondDeployment(c, result, err)
 }
 
@@ -232,7 +288,20 @@ func DeleteDeployment(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{})
+	cleanupPending := false
+	if _, err := model.GetFlytePublication(id); err == nil {
+		if err := model.UnpublishFlyteDeployment(id); err != nil {
+			cleanupPending = true
+			if markErr := model.MarkFlytePublicationCleanupPending(id, "local publication cleanup failed"); markErr != nil {
+				common.ApiError(c, markErr)
+				return
+			}
+		}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"cleanup_pending": cleanupPending})
 }
 
 func GetDeploymentLogs(c *gin.Context) {
@@ -312,4 +381,11 @@ func respondDeployment(c *gin.Context, data any, err error) {
 		return
 	}
 	common.ApiSuccess(c, data)
+}
+
+func attachDeploymentPublication(summary *flyte2.ModelSummary) {
+	publication, err := model.GetFlytePublication(summary.ID)
+	if err == nil {
+		summary.Publication = publicationResponse(publication)
+	}
 }

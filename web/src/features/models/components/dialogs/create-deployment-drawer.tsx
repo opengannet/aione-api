@@ -6,13 +6,14 @@ it under the terms of the GNU Affero General Public License as
 published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -23,11 +24,16 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 
-import { createDeployment } from '../../api'
+import {
+  createDeployment,
+  getDeploymentSettings,
+  publishDeployment,
+} from '../../api'
 import { deploymentsQueryKeys } from '../../lib'
-import type { DeploymentFormData } from '../../types'
+import type { DeploymentFormData, NewPublicationToken } from '../../types'
 
 const defaults: DeploymentFormData = {
   name: '',
@@ -46,6 +52,17 @@ const defaults: DeploymentFormData = {
   codes: [{ id: '', branch: 'main', path: '', token: '' }],
 }
 
+const newTokenDefaults: NewPublicationToken = {
+  user_id: 0,
+  name: '',
+  expired_time: -1,
+  remain_quota: 0,
+  unlimited_quota: true,
+  model_limits_enabled: true,
+  allow_ips: '',
+  cross_group_retry: false,
+}
+
 export function CreateDeploymentDrawer({
   open,
   onOpenChange,
@@ -57,6 +74,23 @@ export function CreateDeploymentDrawer({
   const queryClient = useQueryClient()
   const [values, setValues] = useState<DeploymentFormData>(defaults)
   const [submitting, setSubmitting] = useState(false)
+  const [publishAfterCreate, setPublishAfterCreate] = useState(false)
+  const [accessGroup, setAccessGroup] = useState('aione')
+  const [tokenIDs, setTokenIDs] = useState('')
+  const [createNewToken, setCreateNewToken] = useState(false)
+  const [newToken, setNewToken] =
+    useState<NewPublicationToken>(newTokenDefaults)
+  const { data: settingsResponse } = useQuery({
+    queryKey: [...deploymentsQueryKeys.all, 'settings'],
+    queryFn: getDeploymentSettings,
+    enabled: open,
+    staleTime: 30_000,
+  })
+  const publicationEnabled =
+    settingsResponse?.data?.publication_enabled === true
+  useEffect(() => {
+    if (open) setPublishAfterCreate(publicationEnabled)
+  }, [open, publicationEnabled])
   const resource = values.resourceDefinition
   const source = values.codes[0]
   const set = <K extends keyof DeploymentFormData>(
@@ -89,17 +123,64 @@ export function CreateDeploymentDrawer({
       toast.error(t('Model cache size must be a positive integer Gi value.'))
       return
     }
+    const parsedTokenIDs = tokenIDs
+      .split(',')
+      .map((value) => Number(value.trim()))
+      .filter((value) => Number.isInteger(value) && value > 0)
+    if (
+      publishAfterCreate &&
+      (!accessGroup.trim() || (parsedTokenIDs.length === 0 && !createNewToken))
+    ) {
+      toast.error(
+        t(
+          'A fixed access group and at least one API key ID are required for publication.'
+        )
+      )
+      return
+    }
+    if (
+      publishAfterCreate &&
+      createNewToken &&
+      (newToken.user_id <= 0 || !newToken.name.trim())
+    ) {
+      toast.error(t('API key owner user ID and name are required.'))
+      return
+    }
     setSubmitting(true)
     const response = await createDeployment({
       ...values,
       codes: source.id.trim() ? [source] : [],
     })
-    setSubmitting(false)
     if (!response.success) {
+      setSubmitting(false)
       toast.error(response.message || t('Failed to create deployment'))
       return
     }
-    toast.success(t('Deployment created'))
+    if (publishAfterCreate && response.data?.id) {
+      const publication = await publishDeployment(response.data.id, {
+        access_group: accessGroup.trim(),
+        token_ids: parsedTokenIDs,
+        idempotency_key: crypto.randomUUID(),
+        new_token: createNewToken
+          ? { ...newToken, name: newToken.name.trim() }
+          : undefined,
+      })
+      if (!publication.success) {
+        setSubmitting(false)
+        toast.error(
+          `${t('Deployment created, but publication did not complete.')}: ${publication.message || t('Operation failed')}`
+        )
+        void queryClient.invalidateQueries({
+          queryKey: deploymentsQueryKeys.lists(),
+        })
+        onOpenChange(false)
+        return
+      }
+      toast.success(t('Deployment created and published'))
+    } else {
+      toast.success(t('Deployment created'))
+    }
+    setSubmitting(false)
     setValues(defaults)
     onOpenChange(false)
     void queryClient.invalidateQueries({
@@ -222,6 +303,156 @@ export function CreateDeploymentDrawer({
               />
             </Field>
           </div>
+          {publicationEnabled ? (
+            <div className='border-border grid gap-4 rounded-lg border p-4 md:col-span-2 md:grid-cols-2'>
+              <label className='flex items-center gap-2 md:col-span-2'>
+                <Checkbox
+                  checked={publishAfterCreate}
+                  onCheckedChange={(checked) =>
+                    setPublishAfterCreate(checked === true)
+                  }
+                />
+                <span className='text-sm font-medium'>
+                  {t('Publish after creation')}
+                </span>
+              </label>
+              {publishAfterCreate ? (
+                <>
+                  <Field label={t('Fixed access group')}>
+                    <Input
+                      value={accessGroup}
+                      onChange={(event) => setAccessGroup(event.target.value)}
+                    />
+                  </Field>
+                  <Field label={t('API key IDs')}>
+                    <Input
+                      value={tokenIDs}
+                      onChange={(event) => setTokenIDs(event.target.value)}
+                      placeholder='1, 2'
+                    />
+                  </Field>
+                  <p className='text-muted-foreground text-sm md:col-span-2'>
+                    {t(
+                      'Only API keys already assigned to this fixed group can be bound. Unrestricted keys in the group can access every published model.'
+                    )}
+                  </p>
+                  <label className='flex items-center gap-2 md:col-span-2'>
+                    <Checkbox
+                      checked={createNewToken}
+                      onCheckedChange={(checked) =>
+                        setCreateNewToken(checked === true)
+                      }
+                    />
+                    <span className='text-sm font-medium'>
+                      {t('Create and bind a new API key')}
+                    </span>
+                  </label>
+                  {createNewToken ? (
+                    <>
+                      <Field label={t('Owner user ID')}>
+                        <Input
+                          type='number'
+                          min={1}
+                          value={newToken.user_id || ''}
+                          onChange={(event) =>
+                            setNewToken((current) => ({
+                              ...current,
+                              user_id: Number(event.target.value),
+                            }))
+                          }
+                        />
+                      </Field>
+                      <Field label={t('API key name')}>
+                        <Input
+                          value={newToken.name}
+                          onChange={(event) =>
+                            setNewToken((current) => ({
+                              ...current,
+                              name: event.target.value,
+                            }))
+                          }
+                        />
+                      </Field>
+                      <Field label={t('Expiration timestamp')}>
+                        <Input
+                          type='number'
+                          value={newToken.expired_time}
+                          onChange={(event) =>
+                            setNewToken((current) => ({
+                              ...current,
+                              expired_time: Number(event.target.value),
+                            }))
+                          }
+                        />
+                      </Field>
+                      {!newToken.unlimited_quota ? (
+                        <Field label={t('Quota')}>
+                          <Input
+                            type='number'
+                            min={0}
+                            value={newToken.remain_quota}
+                            onChange={(event) =>
+                              setNewToken((current) => ({
+                                ...current,
+                                remain_quota: Number(event.target.value),
+                              }))
+                            }
+                          />
+                        </Field>
+                      ) : (
+                        <div />
+                      )}
+                      <ToggleField
+                        label={t('Unlimited Quota')}
+                        checked={newToken.unlimited_quota}
+                        onCheckedChange={(checked) =>
+                          setNewToken((current) => ({
+                            ...current,
+                            unlimited_quota: checked,
+                          }))
+                        }
+                      />
+                      <ToggleField
+                        label={t('Restrict key to bound models')}
+                        checked={newToken.model_limits_enabled}
+                        onCheckedChange={(checked) =>
+                          setNewToken((current) => ({
+                            ...current,
+                            model_limits_enabled: checked,
+                          }))
+                        }
+                      />
+                      <ToggleField
+                        label={t('Cross-group retry')}
+                        checked={newToken.cross_group_retry}
+                        onCheckedChange={(checked) =>
+                          setNewToken((current) => ({
+                            ...current,
+                            cross_group_retry: checked,
+                          }))
+                        }
+                      />
+                      <Field
+                        label={t('IP Whitelist (supports CIDR)')}
+                        className='md:col-span-2'
+                      >
+                        <Textarea
+                          rows={3}
+                          value={newToken.allow_ips}
+                          onChange={(event) =>
+                            setNewToken((current) => ({
+                              ...current,
+                              allow_ips: event.target.value,
+                            }))
+                          }
+                        />
+                      </Field>
+                    </>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+          ) : null}
         </form>
         <SheetFooter>
           <Button type='submit' form='flyte2-create-form' disabled={submitting}>
@@ -248,5 +479,22 @@ function Field({
       <Label className='mb-2'>{label}</Label>
       {children}
     </div>
+  )
+}
+
+function ToggleField({
+  label,
+  checked,
+  onCheckedChange,
+}: {
+  label: string
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+}) {
+  return (
+    <label className='flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm'>
+      <span>{label}</span>
+      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+    </label>
   )
 }

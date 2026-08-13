@@ -1,3 +1,5 @@
+import axios from 'axios'
+
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -304,6 +306,7 @@ export async function updateDeploymentSettings(data: {
   domain: string
   api_key?: string
   clear_api_key?: boolean
+  publication_enabled?: boolean
 }): Promise<DeploymentSettingsResponse> {
   const res = await api.put('/api/deployments/settings', data)
   return res.data
@@ -319,7 +322,7 @@ export async function testDeploymentConnection(
 ): Promise<{
   success: boolean
   message?: string
-  data?: { connected: boolean; model_count: number }
+  data?: { connected: boolean; model_count: number; org: string }
 }> {
   const config = { skipErrorHandler: true } as unknown as Parameters<
     typeof api.post
@@ -404,4 +407,82 @@ export async function stopDeployment(id: string | number): Promise<{
 }> {
   const res = await api.post(`/api/deployments/${id}/stop`)
   return res.data
+}
+
+export async function getDeploymentPublication(id: string | number) {
+  const res = await api.get(`/api/deployments/${id}/publication`)
+  return res.data as {
+    success: boolean
+    message?: string
+    data?: import('./types').FlytePublication | null
+  }
+}
+
+export async function publishDeployment(
+  id: string | number,
+  data: {
+    access_group: string
+    token_ids: number[]
+    idempotency_key: string
+    upstream_model?: string
+    new_token?: import('./types').NewPublicationToken
+  }
+) {
+  try {
+    const res = await api.post(`/api/deployments/${id}/publication`, data)
+    return res.data as {
+      success: boolean
+      message?: string
+      data?: import('./types').FlytePublication & {
+        created_token?: { id: number; key: string; name: string }
+      }
+    }
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error) && error.response?.data) {
+      return error.response.data as { success: boolean; message?: string }
+    }
+    throw error
+  }
+}
+
+export async function unpublishDeployment(id: string | number) {
+  const res = await api.delete(`/api/deployments/${id}/publication`)
+  return res.data as { success: boolean; message?: string }
+}
+
+export async function addDeploymentPublicationBindings(
+  id: string | number,
+  tokenIds: number[]
+) {
+  const res = await api.post(`/api/deployments/${id}/publication/bindings`, {
+    token_ids: tokenIds,
+    idempotency_key: crypto.randomUUID(),
+  })
+  return res.data as { success: boolean; message?: string }
+}
+
+export async function removeDeploymentPublicationBinding(
+  id: string | number,
+  tokenId: number
+) {
+  const res = await api.delete(
+    `/api/deployments/${id}/publication/bindings/${tokenId}`
+  )
+  return res.data as { success: boolean; message?: string }
+}
+
+export async function reconcileDeploymentPublication(id: string | number) {
+  const res = await api.post(`/api/deployments/${id}/publication/reconcile`)
+  return res.data as { success: boolean; message?: string }
+}
+
+export async function updateDeploymentPublicationUpstreamModel(
+  id: string | number,
+  upstreamModel: string
+) {
+  const res = await api.put(
+    `/api/deployments/${id}/publication/upstream-model`,
+    { upstream_model: upstreamModel }
+  )
+  return res.data as { success: boolean; message?: string }
 }

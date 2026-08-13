@@ -35,6 +35,7 @@ func InitOptionMap() {
 	common.OptionMap["model_deployment.flyte2.project"] = "aione"
 	common.OptionMap["model_deployment.flyte2.domain"] = "development"
 	common.OptionMap["model_deployment.flyte2.api_key"] = ""
+	common.OptionMap["model_deployment.flyte2.publication_enabled"] = "false"
 
 	// 添加原有的系统配置
 	common.OptionMap["FileUploadPermission"] = strconv.Itoa(common.FileUploadPermission)
