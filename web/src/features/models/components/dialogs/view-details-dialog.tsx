@@ -74,11 +74,11 @@ export function ViewDetailsDialog({
               {detail.url ? (
                 <a
                   className='text-primary inline-flex items-center gap-1 text-sm'
-                  href={detail.url}
+                  href={`${detail.url.replace(/\/$/, '')}/v1/models`}
                   target='_blank'
                   rel='noreferrer'
                 >
-                  {t('Open endpoint')}
+                  {t('Open model validation endpoint')}
                   <ExternalLink className='size-4' />
                 </a>
               ) : null}
