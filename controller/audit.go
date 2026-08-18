@@ -47,8 +47,9 @@ var auditContentTemplates = map[string]string{
 
 	"redemption.create": "Created ${count} redemption codes named ${name} (${quota} each)",
 
-	"subscription.plan_reset":      "Reset active subscriptions for plan ${plan_id}",
-	"subscription.user_plan_reset": "Reset active plan ${plan_id} subscriptions for user ${target_user_id}",
+	"subscription.plan_reset":        "Reset active subscriptions for plan ${plan_id}",
+	"subscription.user_plan_reset":   "Reset active plan ${plan_id} subscriptions for user ${target_user_id}",
+	"token.flyte_publication.create": "Created Flyte publication API key ${name} (ID: ${token_id}) for model ${model_code}",
 }
 
 // auditContentEN 按 action 模板渲染英文兜底文本；未登记的 action 退回 action 本身。

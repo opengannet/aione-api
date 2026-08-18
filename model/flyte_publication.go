@@ -11,12 +11,16 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"gorm.io/gorm"
 )
 
 var (
-	ErrFlytePublicationConflict  = errors.New("Flyte publication conflict")
-	flytePublicationMutationLock sync.Mutex
+	ErrFlytePublicationConflict    = errors.New("Flyte publication conflict")
+	ErrFlytePublicationNotFound    = errors.New("Flyte publication not found")
+	ErrFlytePublicationNotIssuable = errors.New("Flyte publication cannot issue API keys")
+	ErrFlytePublicationTokenLimit  = errors.New("Flyte publication API key owner reached the token limit")
+	flytePublicationMutationLock   sync.Mutex
 )
 
 const (
@@ -101,6 +105,14 @@ type FlytePublicationMutation struct {
 	IdempotencyKey string
 }
 
+type FlytePublicationTokenMutation struct {
+	ModelCode           string
+	Name                string
+	IdempotencyKey      string
+	UserID              int
+	ExpectedAccessGroup string
+}
+
 func FlyteScopeKey(baseURL, organization, project, domain string) string {
 	return sha256Hex(strings.Join([]string{strings.TrimRight(strings.TrimSpace(baseURL), "/"), strings.TrimSpace(organization), strings.TrimSpace(project), strings.TrimSpace(domain)}, "\x00"))
 }
@@ -139,6 +151,24 @@ func GetFlytePublication(deploymentID string) (*FlytePublicationView, error) {
 	}
 	var publication FlytePublication
 	if err := DB.Where("deployment_id = ?", deploymentID).First(&publication).Error; err != nil {
+		return nil, err
+	}
+	return loadFlytePublicationView(DB, publication)
+}
+
+func GetFlytePublicationByModelCode(modelCode string) (*FlytePublicationView, error) {
+	modelCode, err := ValidateFlyteModelCode(modelCode)
+	if err != nil {
+		return nil, err
+	}
+	if !flytePublicationTablesReady(DB) {
+		return nil, ErrFlytePublicationNotFound
+	}
+	var publication FlytePublication
+	if err := DB.Where("model_code_key = ?", FlyteModelCodeKey(modelCode)).First(&publication).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrFlytePublicationNotFound
+		}
 		return nil, err
 	}
 	return loadFlytePublicationView(DB, publication)
@@ -383,6 +413,111 @@ func PublishFlyteDeployment(mutation FlytePublicationMutation) (*FlytePublicatio
 	invalidateFlytePublicationTokenCaches(affectedTokenIDs)
 	view, err := loadFlytePublicationView(DB, publication)
 	return view, createdToken, err
+}
+
+func CreateFlytePublicationToken(mutation FlytePublicationTokenMutation) (*Token, bool, error) {
+	flytePublicationMutationLock.Lock()
+	defer flytePublicationMutationLock.Unlock()
+
+	modelCode, err := ValidateFlyteModelCode(mutation.ModelCode)
+	if err != nil {
+		return nil, false, err
+	}
+	name := strings.TrimSpace(mutation.Name)
+	if name == "" || len(name) > 50 {
+		return nil, false, fmt.Errorf("API key name must contain 1 to 50 bytes")
+	}
+	idempotencyKey := strings.TrimSpace(mutation.IdempotencyKey)
+	if idempotencyKey == "" || len(idempotencyKey) > 128 {
+		return nil, false, fmt.Errorf("idempotency key must contain 1 to 128 bytes")
+	}
+	if mutation.UserID <= 0 {
+		return nil, false, fmt.Errorf("API key owner user ID must be positive")
+	}
+	expectedAccessGroup := strings.TrimSpace(mutation.ExpectedAccessGroup)
+	if expectedAccessGroup == "" {
+		return nil, false, fmt.Errorf("expected access group is required")
+	}
+
+	var token Token
+	created := false
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		var publication FlytePublication
+		if err := lockForUpdate(tx).Where("model_code_key = ?", FlyteModelCodeKey(modelCode)).First(&publication).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrFlytePublicationNotFound
+			}
+			return err
+		}
+		switch publication.Phase {
+		case FlytePublicationPhasePending, FlytePublicationPhasePublished, FlytePublicationPhaseDrifted:
+		case FlytePublicationPhaseCleanup:
+			return fmt.Errorf("%w: publication cleanup is pending", ErrFlytePublicationNotIssuable)
+		default:
+			return fmt.Errorf("%w: unsupported publication phase %s", ErrFlytePublicationNotIssuable, publication.Phase)
+		}
+
+		var gateway FlyteGateway
+		if err := lockForUpdate(tx).First(&gateway, publication.GatewayID).Error; err != nil {
+			return err
+		}
+		if gateway.AccessGroup != expectedAccessGroup {
+			return fmt.Errorf("%w: publication access group changed", ErrFlytePublicationConflict)
+		}
+
+		var existing FlytePublicationBinding
+		err := lockForUpdate(tx).Where("publication_id = ? AND idempotency_key = ?", publication.ID, idempotencyKey).First(&existing).Error
+		if err == nil {
+			if err := tx.First(&token, existing.TokenID).Error; err != nil {
+				return err
+			}
+			if token.UserId != mutation.UserID {
+				return fmt.Errorf("%w: idempotency key belongs to another API key owner", ErrFlytePublicationConflict)
+			}
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		var tokenCount int64
+		if err := tx.Model(&Token{}).Where("user_id = ?", mutation.UserID).Count(&tokenCount).Error; err != nil {
+			return err
+		}
+		if int(tokenCount) >= operation_setting.GetMaxUserTokens() {
+			return ErrFlytePublicationTokenLimit
+		}
+		key, err := common.GenerateKey()
+		if err != nil {
+			return err
+		}
+		now := common.GetTimestamp()
+		token = Token{
+			UserId:             mutation.UserID,
+			Name:               name,
+			Key:                key,
+			Status:             common.TokenStatusEnabled,
+			CreatedTime:        now,
+			AccessedTime:       now,
+			ExpiredTime:        -1,
+			UnlimitedQuota:     true,
+			ModelLimitsEnabled: true,
+			Group:              gateway.AccessGroup,
+		}
+		if err := tx.Create(&token).Error; err != nil {
+			return err
+		}
+		if err := bindFlyteToken(tx, publication, gateway, token.Id, idempotencyKey, now); err != nil {
+			return err
+		}
+		created = true
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	invalidateFlytePublicationTokenCaches([]int{token.Id})
+	return &token, created, nil
 }
 
 func enabledChannelConflictWithTx(tx *gorm.DB, managedChannelID int, group, modelCode string) (int, bool) {

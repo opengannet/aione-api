@@ -42,6 +42,14 @@ type tokenKeyResponse struct {
 	Key string `json:"key"`
 }
 
+type flytePublicationTokenResponse struct {
+	ID        int    `json:"id"`
+	Key       string `json:"key"`
+	Name      string `json:"name"`
+	ModelCode string `json:"model_code"`
+	Created   bool   `json:"created"`
+}
+
 type sqliteColumnInfo struct {
 	Name string `gorm:"column:name"`
 	Type string `gorm:"column:type"`
@@ -202,6 +210,14 @@ func newAuthenticatedContext(t *testing.T, method string, target string, body an
 		ctx.Request.Header.Set("Content-Type", "application/json")
 	}
 	ctx.Set("id", userID)
+	return ctx, recorder
+}
+
+func newFlytePublicationTokenContext(t *testing.T, body any, userID int, userGroup string, useAccessToken bool) (*gin.Context, *httptest.ResponseRecorder) {
+	t.Helper()
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/flyte-publication", body, userID)
+	ctx.Set("user_group", userGroup)
+	ctx.Set("use_access_token", useAccessToken)
 	return ctx, recorder
 }
 
@@ -536,5 +552,119 @@ func TestGetTokenKeyRequiresOwnershipAndReturnsFullKey(t *testing.T) {
 	}
 	if strings.Contains(unauthorizedRecorder.Body.String(), token.Key) {
 		t.Fatalf("unauthorized key response leaked raw token key: %s", unauthorizedRecorder.Body.String())
+	}
+}
+
+func TestAddFlytePublicationTokenRequiresPATAndReturnsIdempotentKey(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	if err := db.AutoMigrate(&model.User{}, &model.Log{}, &model.Channel{}, &model.Ability{}, &model.Token{}, &model.FlyteGateway{}, &model.FlytePublication{}, &model.FlytePublicationBinding{}); err != nil {
+		t.Fatalf("failed to migrate Flyte publication tables: %v", err)
+	}
+	seed := seedToken(t, db, 1, "publication-seed", "publication-seed-key")
+	if err := db.Model(seed).Update("group", "aione").Error; err != nil {
+		t.Fatalf("failed to put seed token in publication group: %v", err)
+	}
+
+	publication, _, err := model.PublishFlyteDeployment(model.FlytePublicationMutation{
+		BaseURL: "https://flyte.example/v2", Organization: "org", Project: "aione", Domain: "development",
+		AccessGroup: "aione", DeploymentID: "controller-model", ModelCode: "org/qwen", Endpoint: "https://model.example",
+		UpstreamModel: "served-qwen", Phase: model.FlytePublicationPhasePublished, TokenIDs: []int{seed.Id}, IdempotencyKey: "controller-publish",
+	})
+	if err != nil {
+		t.Fatalf("failed to seed publication: %v", err)
+	}
+
+	body := map[string]any{"model_code": "org/qwen", "name": "flyte-controller", "idempotency_key": "controller-issue"}
+	sessionCtx, sessionRecorder := newFlytePublicationTokenContext(t, body, 7, "aione", false)
+	AddFlytePublicationToken(sessionCtx)
+	if sessionRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected browser session to be rejected with 401, got %d", sessionRecorder.Code)
+	}
+
+	patCtx, patRecorder := newFlytePublicationTokenContext(t, body, 7, "aione", true)
+	AddFlytePublicationToken(patCtx)
+	if patRecorder.Code != http.StatusOK {
+		t.Fatalf("expected PAT request to succeed, got %d: %s", patRecorder.Code, patRecorder.Body.String())
+	}
+	response := decodeAPIResponse(t, patRecorder)
+	if !response.Success {
+		t.Fatalf("expected success response, got %s", response.Message)
+	}
+	var issued flytePublicationTokenResponse
+	if err := common.Unmarshal(response.Data, &issued); err != nil {
+		t.Fatalf("failed to decode issued token: %v", err)
+	}
+	if !issued.Created || issued.Key == "" || issued.ModelCode != "org/qwen" {
+		t.Fatalf("unexpected issued token response: %+v", issued)
+	}
+
+	replayCtx, replayRecorder := newFlytePublicationTokenContext(t, body, 7, "aione", true)
+	AddFlytePublicationToken(replayCtx)
+	var replay flytePublicationTokenResponse
+	if err := common.Unmarshal(decodeAPIResponse(t, replayRecorder).Data, &replay); err != nil {
+		t.Fatalf("failed to decode replayed token: %v", err)
+	}
+	if replay.Created || replay.ID != issued.ID || replay.Key != issued.Key {
+		t.Fatalf("idempotency replay created another key: issued=%+v replay=%+v", issued, replay)
+	}
+	var auditCount int64
+	if err := db.Model(&model.Log{}).Where("user_id = ?", 7).Count(&auditCount).Error; err != nil {
+		t.Fatalf("failed to count creation audits: %v", err)
+	}
+	if auditCount != 1 {
+		t.Fatalf("expected one creation audit after idempotent replay, got %d", auditCount)
+	}
+
+	var binding model.FlytePublicationBinding
+	if err := db.Where("publication_id = ? AND token_id = ?", publication.ID, issued.ID).First(&binding).Error; err != nil {
+		t.Fatalf("missing publication binding: %v", err)
+	}
+	if !binding.ManagedPermissionAdded {
+		t.Fatalf("issued token binding must own the model permission")
+	}
+}
+
+func TestAddFlytePublicationTokenMapsPublicationErrors(t *testing.T) {
+	db := openTokenControllerTestDB(t)
+	if err := db.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.Token{}, &model.FlyteGateway{}, &model.FlytePublication{}, &model.FlytePublicationBinding{}); err != nil {
+		t.Fatalf("failed to migrate Flyte publication tables: %v", err)
+	}
+	seed := seedToken(t, db, 1, "cleanup-publication-seed", "cleanup-publication-seed-key")
+	if err := db.Model(seed).Update("group", "aione").Error; err != nil {
+		t.Fatalf("failed to put cleanup seed token in publication group: %v", err)
+	}
+
+	missingBody := map[string]any{"model_code": "missing", "name": "flyte-missing", "idempotency_key": "missing-issue"}
+	missingCtx, missingRecorder := newFlytePublicationTokenContext(t, missingBody, 7, "aione", true)
+	AddFlytePublicationToken(missingCtx)
+	if missingRecorder.Code != http.StatusNotFound {
+		t.Fatalf("expected missing publication to return 404, got %d", missingRecorder.Code)
+	}
+
+	publication, _, err := model.PublishFlyteDeployment(model.FlytePublicationMutation{
+		BaseURL: "https://flyte.example/v2", Organization: "org", Project: "aione", Domain: "development",
+		AccessGroup: "aione", DeploymentID: "cleanup-controller-model", ModelCode: "cleanup/model", Endpoint: "https://model.example",
+		UpstreamModel: "served-qwen", Phase: model.FlytePublicationPhasePending, TokenIDs: []int{seed.Id}, IdempotencyKey: "cleanup-controller-publish",
+	})
+	if err != nil {
+		t.Fatalf("failed to seed cleanup publication: %v", err)
+	}
+	if err := db.Model(&model.FlytePublication{}).Where("id = ?", publication.ID).Update("phase", model.FlytePublicationPhaseCleanup).Error; err != nil {
+		t.Fatalf("failed to mark publication cleanup_pending: %v", err)
+	}
+
+	cleanupBody := map[string]any{"model_code": "cleanup/model", "name": "flyte-cleanup", "idempotency_key": "cleanup-issue"}
+	cleanupCtx, cleanupRecorder := newFlytePublicationTokenContext(t, cleanupBody, 7, "aione", true)
+	AddFlytePublicationToken(cleanupCtx)
+	if cleanupRecorder.Code != http.StatusConflict {
+		t.Fatalf("expected cleanup_pending publication to return 409, got %d", cleanupRecorder.Code)
+	}
+
+	invalidCtx, invalidRecorder := newFlytePublicationTokenContext(t, map[string]any{
+		"model_code": "bad,model", "name": "flyte-invalid", "idempotency_key": "invalid-issue",
+	}, 7, "aione", true)
+	AddFlytePublicationToken(invalidCtx)
+	if invalidRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid model code to return 400, got %d", invalidRecorder.Code)
 	}
 }
