@@ -16,50 +16,45 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 
 import { getChannelActionPermissions } from './channel-action-permissions'
 
 describe('channel action permissions', () => {
   test('allows channel.write to open managed tuning without definition actions', () => {
-    assert.deepEqual(
+    expect(
       getChannelActionPermissions({
         flyte2Managed: true,
         canWrite: true,
         canSensitiveWrite: false,
-      }),
-      { canEdit: true, canMutateDefinition: false }
-    )
+      })
+    ).toEqual({ canEdit: true, canMutateDefinition: false })
   })
 
   test('keeps sensitive_write as the requirement for ordinary channels', () => {
-    assert.deepEqual(
+    expect(
       getChannelActionPermissions({
         flyte2Managed: false,
         canWrite: true,
         canSensitiveWrite: false,
-      }),
-      { canEdit: false, canMutateDefinition: false }
-    )
-    assert.deepEqual(
+      })
+    ).toEqual({ canEdit: false, canMutateDefinition: false })
+    expect(
       getChannelActionPermissions({
         flyte2Managed: false,
         canWrite: false,
         canSensitiveWrite: true,
-      }),
-      { canEdit: true, canMutateDefinition: true }
-    )
+      })
+    ).toEqual({ canEdit: true, canMutateDefinition: true })
   })
 
   test('keeps copy and delete definition actions disabled for managed channels', () => {
-    assert.deepEqual(
+    expect(
       getChannelActionPermissions({
         flyte2Managed: true,
         canWrite: true,
         canSensitiveWrite: true,
-      }),
-      { canEdit: true, canMutateDefinition: false }
-    )
+      })
+    ).toEqual({ canEdit: true, canMutateDefinition: false })
   })
 })

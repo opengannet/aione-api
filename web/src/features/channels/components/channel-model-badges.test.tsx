@@ -16,11 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
-
 import * as React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, test } from 'vitest'
 
 import { ChannelModelBadges } from './channel-model-badges'
 
@@ -32,7 +30,7 @@ describe('ChannelModelBadges', () => {
     const markup = renderToStaticMarkup(
       React.createElement(ChannelModelBadges, { models: '' })
     )
-    assert.match(markup, />-</)
+    expect(markup).toMatch(/>-</)
   })
 
   test('renders one or two models without an overflow count', () => {
@@ -43,11 +41,11 @@ describe('ChannelModelBadges', () => {
       React.createElement(ChannelModelBadges, { models: 'model-a,model-b' })
     )
 
-    assert.match(one, /model-a/)
-    assert.doesNotMatch(one, /\+1/)
-    assert.match(two, /model-a/)
-    assert.match(two, /model-b/)
-    assert.doesNotMatch(two, /\+1/)
+    expect(one).toMatch(/model-a/)
+    expect(one).not.toMatch(/\+1/)
+    expect(two).toMatch(/model-a/)
+    expect(two).toMatch(/model-b/)
+    expect(two).not.toMatch(/\+1/)
   })
 
   test('shows two models, an overflow count, and all models in the tooltip', () => {
@@ -67,12 +65,12 @@ describe('ChannelModelBadges', () => {
       React.createElement(React.Fragment, null, ...props.items)
     )
 
-    assert.equal(props.max, 2)
-    assert.equal(props.items.length, 3)
-    assert.match(markup, /model-a/)
-    assert.match(markup, /model-b/)
-    assert.match(markup, /\+1/)
-    assert.match(markup, /tabindex="0"/)
-    assert.match(tooltipMarkup, /model-c/)
+    expect(props.max).toBe(2)
+    expect(props.items).toHaveLength(3)
+    expect(markup).toMatch(/model-a/)
+    expect(markup).toMatch(/model-b/)
+    expect(markup).toMatch(/\+1/)
+    expect(markup).toMatch(/tabindex="0"/)
+    expect(tooltipMarkup).toMatch(/model-c/)
   })
 })

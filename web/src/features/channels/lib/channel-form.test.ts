@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
@@ -40,13 +39,13 @@ describe('Flyte2 managed channel tuning payload', () => {
       42
     )
 
-    assert.deepEqual(payload, {
+    expect(payload).toEqual({
       id: 42,
       priority: 12,
       weight: 34,
       tag: 'production',
     })
-    assert.deepEqual(Object.keys(payload).sort(), [
+    expect(Object.keys(payload).sort()).toEqual([
       'id',
       'priority',
       'tag',
@@ -65,7 +64,7 @@ describe('Flyte2 managed channel tuning payload', () => {
       7
     )
 
-    assert.deepEqual(payload, {
+    expect(payload).toEqual({
       id: 7,
       priority: 0,
       weight: 0,

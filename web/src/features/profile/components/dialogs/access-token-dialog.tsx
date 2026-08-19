@@ -55,6 +55,7 @@ export function AccessTokenDialog({
   }, [open, load])
 
   const handleOpenChange = (nextOpen: boolean) => {
+    if (generating) return
     if (!nextOpen) {
       setConfirmOpen(false)
     }
@@ -95,9 +96,9 @@ export function AccessTokenDialog({
               className='gap-2'
             >
               {loading ? (
-                <Loader2 className='h-4 w-4 animate-spin' />
+                <Loader2 className='h-4 w-4 animate-spin' aria-hidden='true' />
               ) : (
-                <RefreshCw className='h-4 w-4' />
+                <RefreshCw className='h-4 w-4' aria-hidden='true' />
               )}
               {loading ? t('Loading...') : actionLabel}
             </Button>
@@ -143,7 +144,9 @@ export function AccessTokenDialog({
 
       <ConfirmDialog
         open={confirmOpen}
-        onOpenChange={setConfirmOpen}
+        onOpenChange={(nextOpen) => {
+          if (!generating) setConfirmOpen(nextOpen)
+        }}
         title={
           hasToken ? t('Regenerate access token?') : t('Generate access token?')
         }
