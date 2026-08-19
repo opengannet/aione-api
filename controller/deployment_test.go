@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	projecti18n "github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/flyte2"
 	"github.com/gin-gonic/gin"
@@ -41,11 +42,11 @@ func TestUpdateModelDeploymentSettingsAPIKeySemantics(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			setupDeploymentControllerTest(t, flyteDeploymentSettings{
-				BaseURL: server.URL + "/v2", Project: "aione", Domain: "development", APIKey: "saved-key", Configured: true,
+				BaseURL: server.URL + "/v2", Project: "aione", APIKey: "saved-key", Configured: true,
 			})
 			response := httptest.NewRecorder()
 			context, _ := gin.CreateTestContext(response)
-			payload := fmt.Sprintf(`{"enabled":%t,"base_url":%q,"project":"aione","domain":"development"%s}`, test.enabled, server.URL+"/v2", test.extra)
+			payload := fmt.Sprintf(`{"enabled":%t,"base_url":%q,"project":"aione"%s}`, test.enabled, server.URL+"/v2", test.extra)
 			context.Request = httptest.NewRequest(http.MethodPut, "/api/deployments/settings", strings.NewReader(payload))
 			context.Request.Header.Set("Content-Type", "application/json")
 
@@ -75,7 +76,7 @@ func TestUpdateModelDeploymentSettingsAPIKeySemantics(t *testing.T) {
 func TestFlyte2ConnectionAcceptsZeroModels(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		assert.Equal(t, "aione", request.URL.Query().Get("project"))
-		assert.Equal(t, "development", request.URL.Query().Get("domain"))
+		assert.Contains(t, flyteDeploymentDomains, request.URL.Query().Get("domain"))
 		assert.Equal(t, "connection-key", request.Header.Get("X-API-Key"))
 		w.Header().Set("Content-Type", "application/json")
 		if strings.HasSuffix(request.URL.Path, "/context") {
@@ -87,7 +88,7 @@ func TestFlyte2ConnectionAcceptsZeroModels(t *testing.T) {
 	}))
 	defer server.Close()
 	setupDeploymentControllerTest(t, flyteDeploymentSettings{
-		BaseURL: server.URL + "/v2", Project: "aione", Domain: "development", APIKey: "connection-key", Configured: true,
+		BaseURL: server.URL + "/v2", Project: "aione", APIKey: "connection-key", Configured: true,
 	})
 	response := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(response)
@@ -98,14 +99,14 @@ func TestFlyte2ConnectionAcceptsZeroModels(t *testing.T) {
 	var body struct {
 		Success bool `json:"success"`
 		Data    struct {
-			Connected  bool `json:"connected"`
-			ModelCount int  `json:"model_count"`
+			Connected   bool           `json:"connected"`
+			ModelCounts map[string]int `json:"model_counts"`
 		} `json:"data"`
 	}
 	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
 	assert.True(t, body.Success)
 	assert.True(t, body.Data.Connected)
-	assert.Zero(t, body.Data.ModelCount)
+	assert.Equal(t, map[string]int{"development": 0, "production": 0, "staging": 0}, body.Data.ModelCounts)
 	assert.NotContains(t, response.Body.String(), "connection-key")
 }
 
@@ -144,7 +145,7 @@ func TestDeploymentProxyLifecycle(t *testing.T) {
 	}))
 	defer server.Close()
 	setupDeploymentControllerTest(t, flyteDeploymentSettings{
-		Enabled: true, BaseURL: server.URL + "/v2", Project: "aione", Domain: "development", APIKey: "proxy-key", Configured: true,
+		Enabled: true, BaseURL: server.URL + "/v2", Project: "aione", APIKey: "proxy-key", Configured: true,
 	})
 
 	engine := gin.New()
@@ -162,14 +163,14 @@ func TestDeploymentProxyLifecycle(t *testing.T) {
 		path   string
 		body   string
 	}{
-		{method: http.MethodGet, path: "/api/deployments/?p=2&page_size=10&keyword=qwen&status=ACTIVE"},
-		{method: http.MethodPost, path: "/api/deployments/", body: `{"name":"Model A","id":"model-a","code":"qwen","project":"wrong","domain":"wrong","modelCacheSize":"1Gi","codes":[{"id":"repo","token":"source-token"}]}`},
-		{method: http.MethodGet, path: "/api/deployments/model-a"},
-		{method: http.MethodPut, path: "/api/deployments/model-a", body: `{"name":"Edited","image":"vllm","modelCacheSize":"2Gi","resourceDefinition":{"cpu":"1","memory":"1Gi","gpu":0}}`},
-		{method: http.MethodPost, path: "/api/deployments/model-a/start"},
-		{method: http.MethodPost, path: "/api/deployments/model-a/stop"},
-		{method: http.MethodGet, path: "/api/deployments/model-a/logs?page=2&size=50"},
-		{method: http.MethodDelete, path: "/api/deployments/model-a"},
+		{method: http.MethodGet, path: "/api/deployments/?domain=development&p=2&page_size=10&keyword=qwen&status=ACTIVE"},
+		{method: http.MethodPost, path: "/api/deployments/", body: `{"name":"Model A","id":"model-a","code":"qwen","project":"wrong","domain":"development","modelCacheSize":"1Gi","codes":[{"id":"repo","token":"source-token"}]}`},
+		{method: http.MethodGet, path: "/api/deployments/model-a?domain=development"},
+		{method: http.MethodPut, path: "/api/deployments/model-a?domain=development", body: `{"name":"Edited","image":"vllm","modelCacheSize":"2Gi","resourceDefinition":{"cpu":"1","memory":"1Gi","gpu":0}}`},
+		{method: http.MethodPost, path: "/api/deployments/model-a/start?domain=development"},
+		{method: http.MethodPost, path: "/api/deployments/model-a/stop?domain=development"},
+		{method: http.MethodGet, path: "/api/deployments/model-a/logs?domain=development&page=2&size=50"},
+		{method: http.MethodDelete, path: "/api/deployments/model-a?domain=development"},
 	}
 	for _, item := range requests {
 		response := httptest.NewRecorder()
@@ -189,17 +190,65 @@ func TestDeploymentProxyUnavailableDoesNotLeakAPIKey(t *testing.T) {
 	baseURL := server.URL + "/v2"
 	server.Close()
 	setupDeploymentControllerTest(t, flyteDeploymentSettings{
-		Enabled: true, BaseURL: baseURL, Project: "aione", Domain: "development", APIKey: "unavailable-key", Configured: true,
+		Enabled: true, BaseURL: baseURL, Project: "aione", APIKey: "unavailable-key", Configured: true,
 	})
 	response := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(response)
-	context.Request = httptest.NewRequest(http.MethodGet, "/api/deployments/", nil)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/deployments/?domain=development", nil)
 
 	GetAllDeployments(context)
 
 	assert.Contains(t, response.Body.String(), `"success":false`)
 	assert.Contains(t, response.Body.String(), "Flyte2 is unavailable")
 	assert.NotContains(t, response.Body.String(), "unavailable-key")
+}
+
+func TestDeploymentDomainValidation(t *testing.T) {
+	require.NoError(t, projecti18n.Init())
+	setupDeploymentControllerTest(t, flyteDeploymentSettings{
+		Enabled: true, BaseURL: "https://flyte.example/v2", Project: "aione", APIKey: "domain-key", Configured: true,
+	})
+	engine := gin.New()
+	engine.GET("/api/deployments/", GetAllDeployments)
+	engine.POST("/api/deployments/", CreateDeployment)
+
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodGet, "/api/deployments/", nil),
+		httptest.NewRequest(http.MethodGet, "/api/deployments/?domain=custom", nil),
+		httptest.NewRequest(http.MethodPost, "/api/deployments/", strings.NewReader(`{"id":"model-a"}`)),
+		httptest.NewRequest(http.MethodPost, "/api/deployments/", strings.NewReader(`{"id":"model-a","domain":"custom"}`)),
+	} {
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		engine.ServeHTTP(response, request)
+		assert.Equal(t, http.StatusBadRequest, response.Code)
+		assert.Contains(t, response.Body.String(), `"success":false`)
+		assert.Contains(t, response.Body.String(), "development")
+	}
+}
+
+func TestDeploymentDomainsAreForwardedToFlyte2(t *testing.T) {
+	forwarded := make([]string, 0, len(flyteDeploymentDomains))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		forwarded = append(forwarded, request.URL.Query().Get("domain"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":200,"data":{"items":[],"total":0,"page":1,"pageSize":10}}`))
+	}))
+	defer server.Close()
+	setupDeploymentControllerTest(t, flyteDeploymentSettings{
+		Enabled: true, BaseURL: server.URL + "/v2", Project: "aione", APIKey: "domain-key", Configured: true,
+	})
+	engine := gin.New()
+	engine.GET("/api/deployments/", GetAllDeployments)
+
+	for _, domain := range flyteDeploymentDomains {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/api/deployments/?domain="+domain, nil)
+		engine.ServeHTTP(response, request)
+		assert.Equal(t, http.StatusOK, response.Code)
+		assert.Contains(t, response.Body.String(), `"success":true`)
+	}
+	assert.Equal(t, flyteDeploymentDomains, forwarded)
 }
 
 func setupDeploymentControllerTest(t *testing.T, settings flyteDeploymentSettings) {
@@ -212,12 +261,12 @@ func setupDeploymentControllerTest(t *testing.T, settings flyteDeploymentSetting
 	common.OptionMapRWMutex.Lock()
 	previousOptions := common.OptionMap
 	common.OptionMap = map[string]string{
-		flyteEnabledKey:            strconv.FormatBool(settings.Enabled),
-		flyteBaseURLKey:            settings.BaseURL,
-		flyteProjectKey:            settings.Project,
-		flyteDomainKey:             settings.Domain,
-		flyteAPIKeyKey:             settings.APIKey,
-		flytePublicationEnabledKey: strconv.FormatBool(settings.PublicationEnabled),
+		flyteEnabledKey:                  strconv.FormatBool(settings.Enabled),
+		flyteBaseURLKey:                  settings.BaseURL,
+		flyteProjectKey:                  settings.Project,
+		"model_deployment.flyte2.domain": "development",
+		flyteAPIKeyKey:                   settings.APIKey,
+		flytePublicationEnabledKey:       strconv.FormatBool(settings.PublicationEnabled),
 	}
 	common.OptionMapRWMutex.Unlock()
 	model.DB = database

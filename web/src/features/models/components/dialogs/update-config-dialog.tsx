@@ -27,7 +27,7 @@ import { Textarea } from '@/components/ui/textarea'
 
 import { getDeployment, updateDeployment } from '../../api'
 import { deploymentsQueryKeys } from '../../lib'
-import type { DeploymentFormData } from '../../types'
+import type { DeploymentDomain, DeploymentFormData } from '../../types'
 
 type Editable = Pick<
   DeploymentFormData,
@@ -38,20 +38,22 @@ export function UpdateConfigDialog({
   open,
   onOpenChange,
   deploymentId,
+  domain,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   deploymentId: string | number | null
+  domain: DeploymentDomain
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [values, setValues] = useState<Editable>()
   const [saving, setSaving] = useState(false)
   const { data, isLoading } = useQuery({
-    queryKey: deploymentsQueryKeys.detail(deploymentId ?? ''),
+    queryKey: deploymentsQueryKeys.detail(domain, deploymentId ?? ''),
     queryFn: () => {
       if (deploymentId === null) throw new Error('deployment ID is required')
-      return getDeployment(deploymentId)
+      return getDeployment(domain, deploymentId)
     },
     enabled: open && deploymentId !== null,
   })
@@ -86,7 +88,7 @@ export function UpdateConfigDialog({
     event.preventDefault()
     if (!deploymentId || !values) return
     setSaving(true)
-    const response = await updateDeployment(deploymentId, values)
+    const response = await updateDeployment(domain, deploymentId, values)
     setSaving(false)
     if (!response.success) {
       toast.error(response.message || t('Update failed'))

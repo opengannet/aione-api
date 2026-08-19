@@ -21,7 +21,7 @@ func TestDeploymentPricingLifecycle(t *testing.T) {
 	server := deploymentPricingFlyteServer(t, "flyte-price-model")
 	defer server.Close()
 	setupDeploymentControllerTest(t, flyteDeploymentSettings{
-		Enabled: true, BaseURL: server.URL + "/v2", Project: "aione", Domain: "development", APIKey: "pricing-key", Configured: true,
+		Enabled: true, BaseURL: server.URL + "/v2", Project: "aione", APIKey: "pricing-key", Configured: true,
 	})
 	restoreDeploymentPricingAfterTest(t)
 
@@ -94,7 +94,7 @@ func TestDeploymentPricingRejectsInvalidAndAdvancedConfiguration(t *testing.T) {
 	server := deploymentPricingFlyteServer(t, "flyte-advanced-model")
 	defer server.Close()
 	setupDeploymentControllerTest(t, flyteDeploymentSettings{
-		Enabled: true, BaseURL: server.URL + "/v2", Project: "aione", Domain: "development", APIKey: "pricing-key", Configured: true,
+		Enabled: true, BaseURL: server.URL + "/v2", Project: "aione", APIKey: "pricing-key", Configured: true,
 	})
 	restoreDeploymentPricingAfterTest(t)
 
@@ -141,7 +141,7 @@ func deploymentPricingFlyteServer(t *testing.T, modelCode string) *httptest.Serv
 
 func performDeploymentPricingRequest(engine *gin.Engine, method string, payload string) *httptest.ResponseRecorder {
 	response := httptest.NewRecorder()
-	request := httptest.NewRequest(method, "/api/deployments/deployment-price/pricing", strings.NewReader(payload))
+	request := httptest.NewRequest(method, "/api/deployments/deployment-price/pricing?domain=development", strings.NewReader(payload))
 	if payload != "" {
 		request.Header.Set("Content-Type", "application/json")
 	}

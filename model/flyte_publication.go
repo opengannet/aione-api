@@ -145,12 +145,17 @@ func HasFlytePublicationRecords() (bool, error) {
 	return count > 0, nil
 }
 
-func GetFlytePublication(deploymentID string) (*FlytePublicationView, error) {
+func GetFlytePublication(baseURL, project, domain, deploymentID string) (*FlytePublicationView, error) {
 	if !flytePublicationTablesReady(DB) {
 		return nil, gorm.ErrRecordNotFound
 	}
 	var publication FlytePublication
-	if err := DB.Where("deployment_id = ?", deploymentID).First(&publication).Error; err != nil {
+	if err := DB.Table("flyte_publications").
+		Select("flyte_publications.*").
+		Joins("JOIN flyte_gateways ON flyte_gateways.id = flyte_publications.gateway_id").
+		Where("flyte_gateways.base_url = ? AND flyte_gateways.project = ? AND flyte_gateways.domain = ? AND flyte_publications.deployment_id = ?",
+			strings.TrimRight(strings.TrimSpace(baseURL), "/"), strings.TrimSpace(project), strings.TrimSpace(domain), strings.TrimSpace(deploymentID)).
+		First(&publication).Error; err != nil {
 		return nil, err
 	}
 	return loadFlytePublicationView(DB, publication)
@@ -193,10 +198,10 @@ func ListFlytePublications() ([]FlytePublicationView, error) {
 	return views, nil
 }
 
-func UpdateFlytePublicationRoute(deploymentID, phase, reasonCode, endpoint, upstreamModel, lastError string) (*FlytePublicationView, error) {
+func UpdateFlytePublicationRoute(publicationID int64, phase, reasonCode, endpoint, upstreamModel, lastError string) (*FlytePublicationView, error) {
 	var publication FlytePublication
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := lockForUpdate(tx).Where("deployment_id = ?", deploymentID).First(&publication).Error; err != nil {
+		if err := lockForUpdate(tx).First(&publication, publicationID).Error; err != nil {
 			return err
 		}
 		now := common.GetTimestamp()
@@ -235,12 +240,12 @@ func UpdateFlytePublicationRoute(deploymentID, phase, reasonCode, endpoint, upst
 	return loadFlytePublicationView(DB, publication)
 }
 
-func MarkFlytePublicationMissing(deploymentID string) (bool, error) {
+func MarkFlytePublicationMissing(publicationID int64) (bool, error) {
 	unpublished := false
 	affectedTokenIDs := []int{}
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var publication FlytePublication
-		if err := lockForUpdate(tx).Where("deployment_id = ?", deploymentID).First(&publication).Error; err != nil {
+		if err := lockForUpdate(tx).First(&publication, publicationID).Error; err != nil {
 			return err
 		}
 		now := common.GetTimestamp()
@@ -275,8 +280,8 @@ func MarkFlytePublicationMissing(deploymentID string) (bool, error) {
 	return unpublished, err
 }
 
-func MarkFlytePublicationCleanupPending(deploymentID, lastError string) error {
-	result := DB.Model(&FlytePublication{}).Where("deployment_id = ?", deploymentID).Updates(map[string]any{"phase": FlytePublicationPhaseCleanup, "reason_code": "local_cleanup_failed", "last_error": lastError, "next_retry_at": common.GetTimestamp() + 15, "updated_at": common.GetTimestamp()})
+func MarkFlytePublicationCleanupPending(publicationID int64, lastError string) error {
+	result := DB.Model(&FlytePublication{}).Where("id = ?", publicationID).Updates(map[string]any{"phase": FlytePublicationPhaseCleanup, "reason_code": "local_cleanup_failed", "last_error": lastError, "next_retry_at": common.GetTimestamp() + 15, "updated_at": common.GetTimestamp()})
 	if result.Error == nil && result.RowsAffected > 0 {
 		InitChannelCache()
 	}
@@ -545,11 +550,11 @@ func enabledChannelConflictWithTx(tx *gorm.DB, managedChannelID int, group, mode
 	return 0, false
 }
 
-func AddFlytePublicationBindings(deploymentID string, tokenIDs []int, idempotencyKey string) (*FlytePublicationView, error) {
+func AddFlytePublicationBindings(publicationID int64, tokenIDs []int, idempotencyKey string) (*FlytePublicationView, error) {
 	now := common.GetTimestamp()
 	var publication FlytePublication
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := lockForUpdate(tx).Where("deployment_id = ?", deploymentID).First(&publication).Error; err != nil {
+		if err := lockForUpdate(tx).First(&publication, publicationID).Error; err != nil {
 			return err
 		}
 		if strings.TrimSpace(idempotencyKey) != "" {
@@ -608,11 +613,11 @@ func bindFlyteToken(tx *gorm.DB, publication FlytePublication, gateway FlyteGate
 	return tx.Create(&binding).Error
 }
 
-func RemoveFlytePublicationBinding(deploymentID string, tokenID int) (bool, error) {
+func RemoveFlytePublicationBinding(publicationID int64, tokenID int) (bool, error) {
 	unpublished := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var publication FlytePublication
-		if err := lockForUpdate(tx).Where("deployment_id = ?", deploymentID).First(&publication).Error; err != nil {
+		if err := lockForUpdate(tx).First(&publication, publicationID).Error; err != nil {
 			return err
 		}
 		if err := unbindFlyteToken(tx, publication, tokenID); err != nil {
@@ -640,11 +645,11 @@ func RemoveFlytePublicationBinding(deploymentID string, tokenID int) (bool, erro
 	return unpublished, err
 }
 
-func UnpublishFlyteDeployment(deploymentID string) error {
+func UnpublishFlyteDeployment(publicationID int64) error {
 	affectedTokenIDs := []int{}
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var publication FlytePublication
-		if err := lockForUpdate(tx).Where("deployment_id = ?", deploymentID).First(&publication).Error; err != nil {
+		if err := lockForUpdate(tx).First(&publication, publicationID).Error; err != nil {
 			return err
 		}
 		var bindings []FlytePublicationBinding
@@ -778,14 +783,15 @@ func MarkFlyteManagedChannels(channels []*Channel) {
 	if err := DB.Where("channel_id IN ?", ids).Find(&gateways).Error; err != nil {
 		return
 	}
-	byChannel := make(map[int]int64, len(gateways))
+	byChannel := make(map[int]FlyteGateway, len(gateways))
 	for _, gateway := range gateways {
-		byChannel[gateway.ChannelID] = gateway.ID
+		byChannel[gateway.ChannelID] = gateway
 	}
 	for _, channel := range channels {
-		if gatewayID, ok := byChannel[channel.Id]; ok {
+		if gateway, ok := byChannel[channel.Id]; ok {
 			channel.Flyte2Managed = true
-			channel.FlyteGatewayID = gatewayID
+			channel.FlyteGatewayID = gateway.ID
+			channel.Flyte2Domain = gateway.Domain
 		}
 	}
 }

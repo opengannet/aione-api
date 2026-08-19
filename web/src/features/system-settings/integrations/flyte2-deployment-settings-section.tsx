@@ -6,8 +6,8 @@ it under the terms of the GNU Affero General Public License as
 published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
-import { CheckCircle2, ExternalLink, Loader2, XCircle } from 'lucide-react'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { CheckCircle2, Loader2, XCircle } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -28,7 +28,6 @@ type Values = {
   enabled: boolean
   base_url: string
   project: string
-  domain: string
   api_key: string
   configured: boolean
   publication_enabled: boolean
@@ -38,7 +37,6 @@ const emptyValues: Values = {
   enabled: false,
   base_url: '',
   project: 'aione',
-  domain: 'development',
   api_key: '',
   configured: false,
   publication_enabled: false,
@@ -64,12 +62,6 @@ export function Flyte2DeploymentSettingsSection() {
     })
   }, [])
 
-  const apiKeysURL = useMemo(() => {
-    const base = values.base_url.trim().replace(/\/$/, '')
-    if (!base || !values.project.trim() || !values.domain.trim()) return ''
-    return `${base}/domain/${encodeURIComponent(values.domain.trim())}/project/${encodeURIComponent(values.project.trim())}/api-keys`
-  }, [values.base_url, values.domain, values.project])
-
   const setField = <K extends keyof Values>(field: K, value: Values[K]) => {
     setValues((current) => ({ ...current, [field]: value }))
   }
@@ -80,7 +72,6 @@ export function Flyte2DeploymentSettingsSection() {
       enabled: values.enabled,
       base_url: values.base_url.trim(),
       project: values.project.trim(),
-      domain: values.domain.trim(),
       api_key: values.api_key.trim() || undefined,
       publication_enabled: values.publication_enabled,
     })
@@ -103,7 +94,6 @@ export function Flyte2DeploymentSettingsSection() {
     const response = await testDeploymentConnection({
       base_url: values.base_url.trim(),
       project: values.project.trim(),
-      domain: values.domain.trim(),
       api_key: values.api_key.trim() || undefined,
     })
     setTesting(false)
@@ -156,8 +146,8 @@ export function Flyte2DeploymentSettingsSection() {
           />
         </div>
 
-        <div className='grid gap-4 md:grid-cols-2'>
-          <Field label={t('Base URL')} className='md:col-span-2'>
+        <div className='grid gap-4'>
+          <Field label={t('Base URL')}>
             <Input
               value={values.base_url}
               onChange={(event) => setField('base_url', event.target.value)}
@@ -172,14 +162,7 @@ export function Flyte2DeploymentSettingsSection() {
               disabled={loading || saving}
             />
           </Field>
-          <Field label={t('Domain')}>
-            <Input
-              value={values.domain}
-              onChange={(event) => setField('domain', event.target.value)}
-              disabled={loading || saving}
-            />
-          </Field>
-          <Field label={t('API Key')} className='md:col-span-2'>
+          <Field label={t('API Key')}>
             <Input
               type='password'
               value={values.api_key}
@@ -195,24 +178,14 @@ export function Flyte2DeploymentSettingsSection() {
           </Field>
         </div>
 
-        {apiKeysURL ? (
-          <Button
-            variant='outline'
-            render={<a href={apiKeysURL} target='_blank' rel='noreferrer' />}
-          >
-            <ExternalLink className='size-4' />
-            {t('Open Flyte2 API Keys')}
-          </Button>
-        ) : null}
-
         {testResult ? (
           <Alert variant={testResult.ok ? 'default' : 'destructive'}>
             {testResult.ok ? <CheckCircle2 /> : <XCircle />}
             <AlertTitle>{testResult.message}</AlertTitle>
             <AlertDescription>
               {testResult.ok
-                ? t('The Flyte2 project and domain are accessible.')
-                : t('Check the URL, API key, project, and domain.')}
+                ? t('All Flyte2 deployment domains are accessible.')
+                : t('Check the URL, API key, and project.')}
             </AlertDescription>
           </Alert>
         ) : null}

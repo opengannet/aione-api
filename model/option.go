@@ -33,7 +33,6 @@ func InitOptionMap() {
 	common.OptionMap["model_deployment.flyte2.enabled"] = "false"
 	common.OptionMap["model_deployment.flyte2.base_url"] = ""
 	common.OptionMap["model_deployment.flyte2.project"] = "aione"
-	common.OptionMap["model_deployment.flyte2.domain"] = "development"
 	common.OptionMap["model_deployment.flyte2.api_key"] = ""
 	common.OptionMap["model_deployment.flyte2.publication_enabled"] = "false"
 

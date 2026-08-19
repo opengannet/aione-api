@@ -23,6 +23,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 
@@ -33,7 +41,11 @@ import {
   stopDeployment,
 } from '../api'
 import { deploymentsQueryKeys } from '../lib'
-import type { Deployment } from '../types'
+import {
+  DEPLOYMENT_DOMAINS,
+  type Deployment,
+  type DeploymentDomain,
+} from '../types'
 import {
   deploymentStatusName,
   useDeploymentsColumns,
@@ -52,15 +64,22 @@ export function DeploymentsTable() {
   const [dialog, setDialog] = useState<{
     type: 'logs' | 'details' | 'update' | 'publication'
     id: string
+    domain: DeploymentDomain
   }>()
   const [deleteTarget, setDeleteTarget] = useState<Deployment>()
   const [deleting, setDeleting] = useState(false)
   const routeSearch = route.useSearch()
+  const navigate = route.useNavigate()
+  const domain = routeSearch.dDomain ?? 'development'
   useEffect(() => {
     if (routeSearch.deployment) {
-      setDialog({ type: 'publication', id: routeSearch.deployment })
+      setDialog({
+        type: 'publication',
+        id: routeSearch.deployment,
+        domain,
+      })
     }
-  }, [routeSearch.deployment])
+  }, [domain, routeSearch.deployment])
   const {
     globalFilter,
     onGlobalFilterChange,
@@ -88,6 +107,7 @@ export function DeploymentsTable() {
       ?.value as string[]) || []
   const status = statusValues.includes('all') ? undefined : statusValues[0]
   const params = {
+    domain,
     keyword: globalFilter || undefined,
     status,
     p: pagination.pageIndex + 1,
@@ -115,13 +135,30 @@ export function DeploymentsTable() {
     void refresh()
   }
   const columns = useDeploymentsColumns({
-    onViewLogs: (id) => setDialog({ type: 'logs', id }),
-    onViewDetails: (id) => setDialog({ type: 'details', id }),
-    onUpdate: (id) => setDialog({ type: 'update', id }),
-    onPublication: (id) => setDialog({ type: 'publication', id }),
+    onViewLogs: (deployment) =>
+      setDialog({ type: 'logs', id: deployment.id, domain: deployment.domain }),
+    onViewDetails: (deployment) =>
+      setDialog({
+        type: 'details',
+        id: deployment.id,
+        domain: deployment.domain,
+      }),
+    onUpdate: (deployment) =>
+      setDialog({
+        type: 'update',
+        id: deployment.id,
+        domain: deployment.domain,
+      }),
+    onPublication: (deployment) =>
+      setDialog({
+        type: 'publication',
+        id: deployment.id,
+        domain: deployment.domain,
+      }),
     onStart: (deployment) =>
-      void runAction(() => startDeployment(deployment.id)),
-    onStop: (deployment) => void runAction(() => stopDeployment(deployment.id)),
+      void runAction(() => startDeployment(deployment.domain, deployment.id)),
+    onStop: (deployment) =>
+      void runAction(() => stopDeployment(deployment.domain, deployment.id)),
     onDelete: setDeleteTarget,
   })
   const deployments = data?.data?.items || []
@@ -144,7 +181,10 @@ export function DeploymentsTable() {
   const confirmDelete = async () => {
     if (!deleteTarget) return
     setDeleting(true)
-    const response = await deleteDeployment(deleteTarget.id)
+    const response = await deleteDeployment(
+      deleteTarget.domain,
+      deleteTarget.id
+    )
     setDeleting(false)
     if (response.success) {
       toast.success(t('Deleted successfully'))
@@ -171,6 +211,38 @@ export function DeploymentsTable() {
         toolbarProps={{
           searchPlaceholder: t('Search deployments...'),
           searchDebounceMs: 500,
+          additionalSearch: (
+            <Select
+              value={domain}
+              onValueChange={(value) => {
+                setDialog(undefined)
+                void navigate({
+                  search: (previous) => ({
+                    ...previous,
+                    dDomain: value as DeploymentDomain,
+                    dPage: 1,
+                    deployment: undefined,
+                  }),
+                })
+              }}
+            >
+              <SelectTrigger
+                className='min-w-40'
+                aria-label={t('Deployment domain')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  {DEPLOYMENT_DOMAINS.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {t(domainLabel(value))}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          ),
           filters: [
             {
               columnId: 'deploymentStatus',
@@ -191,21 +263,25 @@ export function DeploymentsTable() {
         open={dialog?.type === 'logs'}
         onOpenChange={(open) => !open && setDialog(undefined)}
         deploymentId={dialog?.type === 'logs' ? dialog.id : null}
+        domain={dialog?.type === 'logs' ? dialog.domain : domain}
       />
       <ViewDetailsDialog
         open={dialog?.type === 'details'}
         onOpenChange={(open) => !open && setDialog(undefined)}
         deploymentId={dialog?.type === 'details' ? dialog.id : null}
+        domain={dialog?.type === 'details' ? dialog.domain : domain}
       />
       <UpdateConfigDialog
         open={dialog?.type === 'update'}
         onOpenChange={(open) => !open && setDialog(undefined)}
         deploymentId={dialog?.type === 'update' ? dialog.id : null}
+        domain={dialog?.type === 'update' ? dialog.domain : domain}
       />
       <PublicationDialog
         open={dialog?.type === 'publication'}
         onOpenChange={(open) => !open && setDialog(undefined)}
         deploymentId={dialog?.type === 'publication' ? dialog.id : null}
+        domain={dialog?.type === 'publication' ? dialog.domain : domain}
       />
       <AlertDialog
         open={Boolean(deleteTarget)}
@@ -237,4 +313,8 @@ export function DeploymentsTable() {
       </AlertDialog>
     </>
   )
+}
+
+function domainLabel(domain: DeploymentDomain) {
+  return domain.charAt(0).toUpperCase() + domain.slice(1)
 }

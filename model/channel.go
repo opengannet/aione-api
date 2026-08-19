@@ -59,6 +59,7 @@ type Channel struct {
 	Keys           []string `json:"-" gorm:"-"`
 	Flyte2Managed  bool     `json:"flyte2_managed" gorm:"-"`
 	FlyteGatewayID int64    `json:"flyte_gateway_id,omitempty" gorm:"-"`
+	Flyte2Domain   string   `json:"flyte2_domain,omitempty" gorm:"-"`
 }
 
 type ChannelInfo struct {

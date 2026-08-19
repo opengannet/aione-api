@@ -118,11 +118,11 @@ func UpdateDeploymentPricing(c *gin.Context) {
 }
 
 func deploymentPricingModel(c *gin.Context) (string, string, bool) {
-	client, settings, deploymentID, ok := deploymentRequest(c)
+	client, settings, domain, deploymentID, ok := deploymentRequest(c)
 	if !ok {
 		return "", "", false
 	}
-	detail, err := client.GetModel(c.Request.Context(), deploymentID, settings.Project, settings.Domain)
+	detail, err := client.GetModel(c.Request.Context(), deploymentID, settings.Project, domain)
 	if err != nil {
 		common.ApiError(c, err)
 		return "", "", false

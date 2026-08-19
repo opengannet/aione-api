@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog'
 
 import { getDeploymentLogs } from '../../api'
+import type { DeploymentDomain } from '../../types'
 
 const pageSize = 200
 
@@ -28,18 +29,23 @@ export function ViewLogsDialog({
   open,
   onOpenChange,
   deploymentId,
+  domain,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   deploymentId: string | number | null
+  domain: DeploymentDomain
 }) {
   const { t } = useTranslation()
   const [page, setPage] = useState(1)
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['deployment-logs', deploymentId, page],
+    queryKey: ['deployment-logs', domain, deploymentId, page],
     queryFn: () => {
       if (deploymentId === null) throw new Error('deployment ID is required')
-      return getDeploymentLogs(deploymentId, { page, size: pageSize })
+      return getDeploymentLogs(domain, deploymentId, {
+        page,
+        size: pageSize,
+      })
     },
     enabled: open && deploymentId !== null,
     refetchInterval:

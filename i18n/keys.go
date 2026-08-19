@@ -274,6 +274,7 @@ const (
 	MsgDeploymentPricingSaveFailed     = "deployment.pricing_save_failed"
 	MsgDeploymentScopeLocked           = "deployment.scope_locked"
 	MsgDeploymentKeyClearDisabled      = "deployment.key_clear_disabled"
+	MsgDeploymentDomainInvalid         = "deployment.domain_invalid"
 )
 
 // Performance related messages

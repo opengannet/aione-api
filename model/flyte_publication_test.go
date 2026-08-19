@@ -80,12 +80,12 @@ func TestFlytePublicationCreatesOneManagedGatewayAndOwnsOnlyAddedPermissions(t *
 	assert.True(t, conflict)
 	assert.Equal(t, "qwen25-15b", conflictModel)
 
-	unpublished, err := RemoveFlytePublicationBinding("model-a", restricted.Id)
+	unpublished, err := RemoveFlytePublicationBinding(publication.ID, restricted.Id)
 	require.NoError(t, err)
 	assert.False(t, unpublished)
 	require.NoError(t, DB.First(&restricted, restricted.Id).Error)
 	assert.Equal(t, "existing", restricted.ModelLimits)
-	unpublished, err = RemoveFlytePublicationBinding("model-a", unrestricted.Id)
+	unpublished, err = RemoveFlytePublicationBinding(publication.ID, unrestricted.Id)
 	require.NoError(t, err)
 	assert.True(t, unpublished)
 	require.NoError(t, DB.First(&channel, channel.Id).Error)
@@ -103,6 +103,49 @@ func TestValidateFlyteModelCode(t *testing.T) {
 		_, err := ValidateFlyteModelCode(value)
 		assert.Error(t, err)
 	}
+}
+
+func TestFlytePublicationScopeSeparatesMatchingDeploymentIDs(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, database.AutoMigrate(&Channel{}, &Ability{}, &Token{}, &FlyteGateway{}, &FlytePublication{}, &FlytePublicationBinding{}))
+	previousDB, previousCache := DB, common.MemoryCacheEnabled
+	DB, common.MemoryCacheEnabled = database, true
+	t.Cleanup(func() { DB, common.MemoryCacheEnabled = previousDB, previousCache })
+
+	token := Token{UserId: 1, Key: "scope-key", Name: "scope", Group: "aione", ModelLimitsEnabled: true}
+	require.NoError(t, DB.Create(&token).Error)
+	development, _, err := PublishFlyteDeployment(FlytePublicationMutation{
+		BaseURL: "https://flyte.example/v2", Organization: "org", Project: "aione", Domain: "development",
+		AccessGroup: "aione", DeploymentID: "shared-id", ModelCode: "development-model", Phase: FlytePublicationPhasePending,
+		TokenIDs: []int{token.Id}, IdempotencyKey: "development-publication",
+	})
+	require.NoError(t, err)
+	production, _, err := PublishFlyteDeployment(FlytePublicationMutation{
+		BaseURL: "https://flyte.example/v2", Organization: "org", Project: "aione", Domain: "production",
+		AccessGroup: "aione", DeploymentID: "shared-id", ModelCode: "production-model", Phase: FlytePublicationPhasePending,
+		TokenIDs: []int{token.Id}, IdempotencyKey: "production-publication",
+	})
+	require.NoError(t, err)
+
+	developmentLookup, err := GetFlytePublication("https://flyte.example/v2", "aione", "development", "shared-id")
+	require.NoError(t, err)
+	assert.Equal(t, development.ID, developmentLookup.ID)
+	productionLookup, err := GetFlytePublication("https://flyte.example/v2", "aione", "production", "shared-id")
+	require.NoError(t, err)
+	assert.Equal(t, production.ID, productionLookup.ID)
+	assert.NotEqual(t, developmentLookup.Gateway.ChannelID, productionLookup.Gateway.ChannelID)
+	require.NoError(t, DB.First(&token, token.Id).Error)
+	assert.ElementsMatch(t, []string{"development-model", "production-model"}, token.GetModelLimits())
+
+	require.NoError(t, UnpublishFlyteDeployment(development.ID))
+	_, err = GetFlytePublication("https://flyte.example/v2", "aione", "development", "shared-id")
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
+	productionLookup, err = GetFlytePublication("https://flyte.example/v2", "aione", "production", "shared-id")
+	require.NoError(t, err)
+	assert.Equal(t, production.ID, productionLookup.ID)
+	require.NoError(t, DB.First(&token, token.Id).Error)
+	assert.Equal(t, []string{"production-model"}, token.GetModelLimits())
 }
 
 func TestCreateFlytePublicationTokenIsAtomicAndIdempotent(t *testing.T) {
@@ -199,7 +242,7 @@ func TestCreateFlytePublicationTokenIsAtomicAndIdempotent(t *testing.T) {
 	assert.Equal(t, int64(3), tokenCount)
 
 	require.NoError(t, DB.Model(&FlytePublication{}).Where("id = ?", publication.ID).Update("phase", FlytePublicationPhasePublished).Error)
-	require.NoError(t, UnpublishFlyteDeployment("model-a"))
+	require.NoError(t, UnpublishFlyteDeployment(publication.ID))
 	require.NoError(t, DB.First(&stored, issued.Id).Error)
 	assert.Empty(t, stored.ModelLimits)
 }

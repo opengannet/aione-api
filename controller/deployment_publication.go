@@ -54,7 +54,11 @@ type updateUpstreamModelRequest struct {
 }
 
 func GetDeploymentPublication(c *gin.Context) {
-	publication, err := model.GetFlytePublication(strings.TrimSpace(c.Param("id")))
+	_, settings, domain, deploymentID, ok := deploymentRequest(c)
+	if !ok {
+		return
+	}
+	publication, err := model.GetFlytePublication(settings.BaseURL, settings.Project, domain, deploymentID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		common.ApiSuccess(c, nil)
 		return
@@ -81,11 +85,11 @@ func PublishDeployment(c *gin.Context) {
 		common.ApiErrorMsg(c, "idempotency_key is required and must not exceed 128 characters")
 		return
 	}
-	client, settings, deploymentID, ok := deploymentRequest(c)
+	client, settings, domain, deploymentID, ok := deploymentRequest(c)
 	if !ok {
 		return
 	}
-	detail, err := client.GetModel(c.Request.Context(), deploymentID, settings.Project, settings.Domain)
+	detail, err := client.GetModel(c.Request.Context(), deploymentID, settings.Project, domain)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -99,7 +103,7 @@ func PublishDeployment(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgDeploymentPricingRequired)
 		return
 	}
-	contextResult, err := client.GetContext(c.Request.Context(), settings.Project, settings.Domain)
+	contextResult, err := client.GetContext(c.Request.Context(), settings.Project, domain)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -137,7 +141,7 @@ func PublishDeployment(c *gin.Context) {
 		newToken = &model.Token{UserId: request.NewToken.UserID, Name: strings.TrimSpace(request.NewToken.Name), Key: key, Status: common.TokenStatusEnabled, ExpiredTime: request.NewToken.ExpiredTime, RemainQuota: request.NewToken.RemainQuota, UnlimitedQuota: request.NewToken.UnlimitedQuota, ModelLimitsEnabled: request.NewToken.ModelLimitsEnabled, AllowIps: request.NewToken.AllowIPs, CrossGroupRetry: request.NewToken.CrossGroupRetry}
 	}
 	publication, createdToken, err := model.PublishFlyteDeployment(model.FlytePublicationMutation{
-		BaseURL: settings.BaseURL, Organization: contextResult.Org, Project: settings.Project, Domain: settings.Domain,
+		BaseURL: settings.BaseURL, Organization: contextResult.Org, Project: settings.Project, Domain: domain,
 		AccessGroup: strings.TrimSpace(request.AccessGroup), DeploymentID: deploymentID, ModelCode: modelCode,
 		Endpoint: endpoint, UpstreamModel: upstreamModel, Phase: phase, ReasonCode: reason,
 		LastError: errorText(verifyError), CreatedBy: c.GetInt("id"), TokenIDs: request.TokenIDs,
@@ -160,6 +164,7 @@ func PublishDeployment(c *gin.Context) {
 	}
 	recordManageAudit(c, "deployment.publication.publish", map[string]any{
 		"deployment_id":  deploymentID,
+		"domain":         domain,
 		"publication_id": publication.ID,
 		"binding_count":  len(publication.Bindings),
 	})
@@ -167,12 +172,19 @@ func PublishDeployment(c *gin.Context) {
 }
 
 func DeleteDeploymentPublication(c *gin.Context) {
-	err := model.UnpublishFlyteDeployment(strings.TrimSpace(c.Param("id")))
+	_, settings, domain, deploymentID, ok := deploymentRequest(c)
+	if !ok {
+		return
+	}
+	publication, err := model.GetFlytePublication(settings.BaseURL, settings.Project, domain, deploymentID)
+	if err == nil {
+		err = model.UnpublishFlyteDeployment(publication.ID)
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	recordManageAudit(c, "deployment.publication.delete", map[string]any{"deployment_id": strings.TrimSpace(c.Param("id"))})
+	recordManageAudit(c, "deployment.publication.delete", map[string]any{"deployment_id": deploymentID, "domain": domain})
 	common.ApiSuccess(c, gin.H{})
 }
 
@@ -191,13 +203,21 @@ func AddDeploymentPublicationBindings(c *gin.Context) {
 		common.ApiErrorMsg(c, "token_ids is required")
 		return
 	}
-	publication, err := model.AddFlytePublicationBindings(strings.TrimSpace(c.Param("id")), request.TokenIDs, strings.TrimSpace(request.IdempotencyKey))
+	_, settings, domain, deploymentID, ok := deploymentRequest(c)
+	if !ok {
+		return
+	}
+	publication, err := model.GetFlytePublication(settings.BaseURL, settings.Project, domain, deploymentID)
+	if err == nil {
+		publication, err = model.AddFlytePublicationBindings(publication.ID, request.TokenIDs, strings.TrimSpace(request.IdempotencyKey))
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	recordManageAudit(c, "deployment.publication.bind", map[string]any{
-		"deployment_id": strings.TrimSpace(c.Param("id")),
+		"deployment_id": deploymentID,
+		"domain":        domain,
 		"token_ids":     request.TokenIDs,
 	})
 	common.ApiSuccess(c, publicationResponse(publication))
@@ -208,13 +228,22 @@ func DeleteDeploymentPublicationBinding(c *gin.Context) {
 	if !ok {
 		return
 	}
-	unpublished, err := model.RemoveFlytePublicationBinding(strings.TrimSpace(c.Param("id")), tokenID)
+	_, settings, domain, deploymentID, ok := deploymentRequest(c)
+	if !ok {
+		return
+	}
+	publication, err := model.GetFlytePublication(settings.BaseURL, settings.Project, domain, deploymentID)
+	unpublished := false
+	if err == nil {
+		unpublished, err = model.RemoveFlytePublicationBinding(publication.ID, tokenID)
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	recordManageAudit(c, "deployment.publication.unbind", map[string]any{
-		"deployment_id": strings.TrimSpace(c.Param("id")),
+		"deployment_id": deploymentID,
+		"domain":        domain,
 		"token_id":      tokenID,
 	})
 	common.ApiSuccess(c, gin.H{"unpublished": unpublished})
@@ -248,27 +277,27 @@ func ReconcileAllDeploymentPublications(c *gin.Context) {
 }
 
 func reconcileDeploymentPublication(c *gin.Context, requestedUpstream string) error {
-	client, settings, deploymentID, ok := deploymentRequest(c)
+	client, settings, domain, deploymentID, ok := deploymentRequest(c)
 	if !ok {
 		return nil
 	}
-	publication, err := model.GetFlytePublication(deploymentID)
+	publication, err := model.GetFlytePublication(settings.BaseURL, settings.Project, domain, deploymentID)
 	if err != nil {
 		return err
 	}
-	contextResult, err := client.GetContext(c.Request.Context(), settings.Project, settings.Domain)
+	contextResult, err := client.GetContext(c.Request.Context(), settings.Project, domain)
 	if err != nil {
 		return err
 	}
 	if contextResult.Org != publication.Gateway.Organization {
 		return fmt.Errorf("Flyte2 organization changed; publication reconciliation is frozen")
 	}
-	detail, err := client.GetModel(c.Request.Context(), deploymentID, settings.Project, settings.Domain)
+	detail, err := client.GetModel(c.Request.Context(), deploymentID, settings.Project, domain)
 	if err != nil {
 		return err
 	}
 	phase, reason, endpoint, upstream, verifyErr := evaluateFlytePublication(c.Request.Context(), detail, firstNonEmpty(requestedUpstream, publication.UpstreamModel))
-	updated, err := model.UpdateFlytePublicationRoute(deploymentID, phase, reason, endpoint, upstream, errorText(verifyErr))
+	updated, err := model.UpdateFlytePublicationRoute(publication.ID, phase, reason, endpoint, upstream, errorText(verifyErr))
 	if err != nil {
 		return err
 	}
@@ -404,84 +433,132 @@ func positivePathInt(c *gin.Context, key string) (int, bool) {
 
 func reconcileAllFlytePublications(ctx context.Context, force bool) (int, int, error) {
 	settings := readFlyteDeploymentSettings()
-	if settings.BaseURL == "" || settings.Project == "" || settings.Domain == "" || settings.APIKey == "" {
+	if settings.BaseURL == "" || settings.Project == "" || settings.APIKey == "" {
 		return 0, 0, nil
 	}
 	publications, err := model.ListFlytePublications()
 	if err != nil || len(publications) == 0 {
 		return 0, 0, err
 	}
-	client, err := flyte2.NewClient(settings.BaseURL, settings.APIKey)
-	if err != nil {
-		return 0, 0, err
+	type reconciliationScope struct {
+		BaseURL      string
+		Organization string
+		Project      string
+		Domain       string
 	}
-	contextResult, err := client.GetContext(ctx, settings.Project, settings.Domain)
-	if err != nil {
-		return 0, 0, err
-	}
+	byScope := make(map[reconciliationScope][]model.FlytePublicationView)
+	scopes := make([]reconciliationScope, 0)
 	for _, publication := range publications {
-		if publication.Gateway.Organization != contextResult.Org {
-			return 0, 0, fmt.Errorf("Flyte2 organization changed; automatic reconciliation is frozen")
+		scope := reconciliationScope{
+			BaseURL:      publication.Gateway.BaseURL,
+			Organization: publication.Gateway.Organization,
+			Project:      publication.Gateway.Project,
+			Domain:       publication.Gateway.Domain,
 		}
+		if _, exists := byScope[scope]; !exists {
+			scopes = append(scopes, scope)
+		}
+		byScope[scope] = append(byScope[scope], publication)
 	}
-	allModels := make(map[string]flyte2.ModelSummary)
-	page := 1
-	expectedTotal := -1
-	for {
-		result, listErr := client.ListModels(ctx, settings.Project, settings.Domain, "", "", page, 100)
-		if listErr != nil {
-			return 0, 0, listErr
-		}
-		if expectedTotal < 0 {
-			expectedTotal = result.Total
-		} else if result.Total != expectedTotal {
-			return 0, 0, fmt.Errorf("Flyte2 model list changed during pagination")
-		}
-		for _, item := range result.Items {
-			if _, duplicate := allModels[item.ID]; duplicate {
-				return 0, 0, fmt.Errorf("Flyte2 returned duplicate models during pagination")
-			}
-			allModels[item.ID] = item
-		}
-		if len(allModels) == expectedTotal {
-			break
-		}
-		if len(result.Items) == 0 || len(allModels) > expectedTotal {
-			return 0, 0, fmt.Errorf("Flyte2 returned an incomplete model list")
-		}
-		page++
-	}
+	sort.Slice(scopes, func(left, right int) bool {
+		leftKey := scopes[left].BaseURL + "\x00" + scopes[left].Organization + "\x00" + scopes[left].Project + "\x00" + scopes[left].Domain
+		rightKey := scopes[right].BaseURL + "\x00" + scopes[right].Organization + "\x00" + scopes[right].Project + "\x00" + scopes[right].Domain
+		return leftKey < rightKey
+	})
 	reconciled, unpublished := 0, 0
 	now := common.GetTimestamp()
-	for _, publication := range publications {
-		if !force && publication.NextRetryAt > now {
+	reconciliationErrors := make([]error, 0)
+	for _, scope := range scopes {
+		scopePublications := byScope[scope]
+		gateway := scopePublications[0].Gateway
+		client, clientErr := flyte2.NewClient(gateway.BaseURL, settings.APIKey)
+		if clientErr != nil {
+			reconciliationErrors = append(reconciliationErrors, fmt.Errorf("Flyte2 %s domain client initialization failed: %w", gateway.Domain, clientErr))
 			continue
 		}
-		if _, exists := allModels[publication.DeploymentID]; !exists {
-			removed, markErr := model.MarkFlytePublicationMissing(publication.DeploymentID)
-			if markErr != nil {
-				return reconciled, unpublished, markErr
-			}
-			if removed {
-				unpublished++
-			}
+		contextResult, contextErr := client.GetContext(ctx, gateway.Project, gateway.Domain)
+		if contextErr != nil {
+			reconciliationErrors = append(reconciliationErrors, fmt.Errorf("Flyte2 %s domain context failed: %w", gateway.Domain, contextErr))
 			continue
 		}
-		detail, detailErr := client.GetModel(ctx, publication.DeploymentID, settings.Project, settings.Domain)
-		if detailErr != nil {
-			return reconciled, unpublished, detailErr
+		if gateway.Organization != contextResult.Org {
+			reconciliationErrors = append(reconciliationErrors, fmt.Errorf("Flyte2 %s domain organization changed; automatic reconciliation is frozen", gateway.Domain))
+			continue
 		}
-		phase, reason, endpoint, upstream, verifyErr := evaluateFlytePublication(ctx, detail, publication.UpstreamModel)
-		if _, updateErr := model.UpdateFlytePublicationRoute(publication.DeploymentID, phase, reason, endpoint, upstream, errorText(verifyErr)); updateErr != nil {
-			return reconciled, unpublished, updateErr
+
+		allModels := make(map[string]flyte2.ModelSummary)
+		page := 1
+		expectedTotal := -1
+		listFailed := false
+		for {
+			result, listErr := client.ListModels(ctx, gateway.Project, gateway.Domain, "", "", page, 100)
+			if listErr != nil {
+				reconciliationErrors = append(reconciliationErrors, fmt.Errorf("Flyte2 %s domain model listing failed: %w", gateway.Domain, listErr))
+				listFailed = true
+				break
+			}
+			if expectedTotal < 0 {
+				expectedTotal = result.Total
+			} else if result.Total != expectedTotal {
+				reconciliationErrors = append(reconciliationErrors, fmt.Errorf("Flyte2 %s domain model list changed during pagination", gateway.Domain))
+				listFailed = true
+				break
+			}
+			for _, item := range result.Items {
+				if _, duplicate := allModels[item.ID]; duplicate {
+					reconciliationErrors = append(reconciliationErrors, fmt.Errorf("Flyte2 %s domain returned duplicate models during pagination", gateway.Domain))
+					listFailed = true
+					break
+				}
+				allModels[item.ID] = item
+			}
+			if listFailed || len(allModels) == expectedTotal {
+				break
+			}
+			if len(result.Items) == 0 || len(allModels) > expectedTotal {
+				reconciliationErrors = append(reconciliationErrors, fmt.Errorf("Flyte2 %s domain returned an incomplete model list", gateway.Domain))
+				listFailed = true
+				break
+			}
+			page++
 		}
-		reconciled++
+		if listFailed {
+			continue
+		}
+
+		for _, publication := range scopePublications {
+			if !force && publication.NextRetryAt > now {
+				continue
+			}
+			if _, exists := allModels[publication.DeploymentID]; !exists {
+				removed, markErr := model.MarkFlytePublicationMissing(publication.ID)
+				if markErr != nil {
+					reconciliationErrors = append(reconciliationErrors, fmt.Errorf("Flyte2 %s domain publication %s missing-state update failed: %w", gateway.Domain, publication.DeploymentID, markErr))
+					continue
+				}
+				if removed {
+					unpublished++
+				}
+				continue
+			}
+			detail, detailErr := client.GetModel(ctx, publication.DeploymentID, gateway.Project, gateway.Domain)
+			if detailErr != nil {
+				reconciliationErrors = append(reconciliationErrors, fmt.Errorf("Flyte2 %s domain deployment %s lookup failed: %w", gateway.Domain, publication.DeploymentID, detailErr))
+				continue
+			}
+			phase, reason, endpoint, upstream, verifyErr := evaluateFlytePublication(ctx, detail, publication.UpstreamModel)
+			if _, updateErr := model.UpdateFlytePublicationRoute(publication.ID, phase, reason, endpoint, upstream, errorText(verifyErr)); updateErr != nil {
+				reconciliationErrors = append(reconciliationErrors, fmt.Errorf("Flyte2 %s domain deployment %s reconciliation failed: %w", gateway.Domain, publication.DeploymentID, updateErr))
+				continue
+			}
+			reconciled++
+		}
 	}
-	return reconciled, unpublished, nil
+	return reconciled, unpublished, errors.Join(reconciliationErrors...)
 }
 
 func publicationResponse(publication *model.FlytePublicationView) gin.H {
-	response := gin.H{"id": publication.ID, "deployment_id": publication.DeploymentID, "model_code": publication.ModelCode, "endpoint": publication.Endpoint, "upstream_model": publication.UpstreamModel, "phase": publication.Phase, "reason_code": publication.ReasonCode, "last_error": publication.LastError, "access_group": publication.Gateway.AccessGroup, "organization": publication.Gateway.Organization, "channel_id": publication.Gateway.ChannelID, "bindings": publication.Bindings, "pricing_configured": relayhelper.HasModelBillingConfig(publication.ModelCode)}
+	response := gin.H{"id": publication.ID, "deployment_id": publication.DeploymentID, "model_code": publication.ModelCode, "endpoint": publication.Endpoint, "upstream_model": publication.UpstreamModel, "phase": publication.Phase, "reason_code": publication.ReasonCode, "last_error": publication.LastError, "access_group": publication.Gateway.AccessGroup, "organization": publication.Gateway.Organization, "project": publication.Gateway.Project, "domain": publication.Gateway.Domain, "channel_id": publication.Gateway.ChannelID, "bindings": publication.Bindings, "pricing_configured": relayhelper.HasModelBillingConfig(publication.ModelCode)}
 	if hasUnrestrictedBinding(publication) {
 		response["warning"] = "Unrestricted keys in this fixed group can access every published model."
 	}

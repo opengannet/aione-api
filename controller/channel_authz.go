@@ -90,6 +90,7 @@ var channelReadOnlyFields = map[string]struct{}{
 	"used_quota":           {},
 	"flyte2_managed":       {},
 	"flyte_gateway_id":     {},
+	"flyte2_domain":        {},
 }
 
 func clearChannelReadOnlyFields(channel *PatchChannel, requestData map[string]any) {

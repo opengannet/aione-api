@@ -221,7 +221,7 @@ setting.saved: "設定已更新"
 # Deployment messages (Flyte2)
 deployment.not_enabled: "Flyte2 模型部署功能未啟用"
 deployment.settings_missing: "Flyte2 模型部署設定不完整"
-deployment.settings_required: "啟用 Flyte2 模型部署時必須填寫 Base URL、Project、Domain 和 API Key"
+deployment.settings_required: "啟用 Flyte2 模型部署時必須填寫 Base URL、Project 和 API Key"
 deployment.save_failed: "儲存 Flyte2 模型部署設定失敗"
 deployment.id_required: "模型部署 ID 為必填項"
 deployment.invalid_payload: "無效的請求內容"
@@ -235,6 +235,7 @@ deployment.pricing_request_invalid: "按請求價格必須是非負數"
 deployment.pricing_save_failed: "儲存模型定價失敗"
 deployment.scope_locked: "存在 Gateway 或發佈記錄時不能修改 Flyte2 作用域"
 deployment.key_clear_disabled: "只有關閉模型部署功能後才能清除 Flyte2 API Key"
+deployment.domain_invalid: "域必須是 development、production 或 staging"
 
 # Performance messages
 performance.disk_cache_cleared: "不活躍的磁碟快取已清理"

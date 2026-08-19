@@ -16,7 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { GetModelsParams, SearchModelsParams } from '../types'
+import type {
+  DeploymentDomain,
+  GetModelsParams,
+  SearchModelsParams,
+} from '../types'
 
 /**
  * React Query cache keys for models
@@ -57,15 +61,16 @@ export const deploymentsQueryKeys = {
   all: ['deployments'] as const,
   lists: () => [...deploymentsQueryKeys.all, 'list'] as const,
   list: (filters: {
+    domain: DeploymentDomain
     keyword?: string
     status?: string
     p?: number
     page_size?: number
   }) => [...deploymentsQueryKeys.lists(), filters] as const,
-  detail: (id: string | number) =>
-    [...deploymentsQueryKeys.all, 'detail', id] as const,
-  publication: (id: string | number) =>
-    [...deploymentsQueryKeys.all, 'publication', id] as const,
-  pricing: (id: string | number) =>
-    [...deploymentsQueryKeys.all, 'pricing', id] as const,
+  detail: (domain: DeploymentDomain, id: string | number) =>
+    [...deploymentsQueryKeys.all, 'detail', domain, id] as const,
+  publication: (domain: DeploymentDomain, id: string | number) =>
+    [...deploymentsQueryKeys.all, 'publication', domain, id] as const,
+  pricing: (domain: DeploymentDomain, id: string | number) =>
+    [...deploymentsQueryKeys.all, 'pricing', domain, id] as const,
 }

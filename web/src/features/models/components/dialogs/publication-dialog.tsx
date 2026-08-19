@@ -35,7 +35,7 @@ import {
   updateDeploymentPublicationUpstreamModel,
 } from '../../api'
 import { deploymentsQueryKeys } from '../../lib'
-import type { NewPublicationToken } from '../../types'
+import type { DeploymentDomain, NewPublicationToken } from '../../types'
 import { DeploymentPricingPanel } from './deployment-pricing-panel'
 
 const newTokenDefaults: NewPublicationToken = {
@@ -53,10 +53,12 @@ export function PublicationDialog({
   open,
   onOpenChange,
   deploymentId,
+  domain,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   deploymentId: string | null
+  domain: DeploymentDomain
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -68,10 +70,10 @@ export function PublicationDialog({
   const [createNewToken, setCreateNewToken] = useState(false)
   const [newToken, setNewToken] =
     useState<NewPublicationToken>(newTokenDefaults)
-  const queryKey = deploymentsQueryKeys.publication(deploymentId ?? '')
+  const queryKey = deploymentsQueryKeys.publication(domain, deploymentId ?? '')
   const { data, isLoading } = useQuery({
     queryKey,
-    queryFn: () => getDeploymentPublication(deploymentId ?? ''),
+    queryFn: () => getDeploymentPublication(domain, deploymentId ?? ''),
     enabled: open && Boolean(deploymentId),
   })
   const publication = data?.data
@@ -118,6 +120,7 @@ export function PublicationDialog({
         {!isLoading && deploymentId ? (
           <DeploymentPricingPanel
             deploymentId={deploymentId}
+            domain={domain}
             onStatusChange={setPricingConfigured}
             onSaved={refresh}
           />
@@ -173,6 +176,7 @@ export function PublicationDialog({
                     onClick={() =>
                       void run(() =>
                         updateDeploymentPublicationUpstreamModel(
+                          domain,
                           deploymentId ?? '',
                           upstreamModel.trim()
                         )
@@ -206,6 +210,7 @@ export function PublicationDialog({
                     onClick={() =>
                       void run(() =>
                         removeDeploymentPublicationBinding(
+                          domain,
                           deploymentId ?? '',
                           binding.token_id
                         )
@@ -228,6 +233,7 @@ export function PublicationDialog({
                   onClick={() =>
                     void run(() =>
                       addDeploymentPublicationBindings(
+                        domain,
                         deploymentId ?? '',
                         parsedTokenIDs()
                       )
@@ -244,7 +250,7 @@ export function PublicationDialog({
                 disabled={submitting}
                 onClick={() =>
                   void run(() =>
-                    reconcileDeploymentPublication(deploymentId ?? '')
+                    reconcileDeploymentPublication(domain, deploymentId ?? '')
                   )
                 }
               >
@@ -255,7 +261,9 @@ export function PublicationDialog({
                 variant='destructive'
                 disabled={submitting}
                 onClick={() =>
-                  void run(() => unpublishDeployment(deploymentId ?? ''))
+                  void run(() =>
+                    unpublishDeployment(domain, deploymentId ?? '')
+                  )
                 }
               >
                 {t('Unpublish')}
@@ -413,7 +421,7 @@ export function PublicationDialog({
                 }
                 onClick={() =>
                   void run(() =>
-                    publishDeployment(deploymentId ?? '', {
+                    publishDeployment(domain, deploymentId ?? '', {
                       access_group: group.trim(),
                       token_ids: parsedTokenIDs(),
                       idempotency_key: crypto.randomUUID(),

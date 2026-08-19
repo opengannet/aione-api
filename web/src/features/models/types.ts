@@ -306,6 +306,14 @@ export type SyncSource = 'official' | 'config'
  */
 export type ModelTabCategory = 'metadata' | 'deployments'
 
+export const DEPLOYMENT_DOMAINS = [
+  'development',
+  'production',
+  'staging',
+] as const
+
+export type DeploymentDomain = (typeof DEPLOYMENT_DOMAINS)[number]
+
 /**
  * Deployment entity from API
  */
@@ -313,7 +321,7 @@ export interface Deployment {
   id: string
   org: string
   project: string
-  domain: string
+  domain: DeploymentDomain
   name: string
   code: string
   type: 'VLLM'
@@ -347,6 +355,8 @@ export interface FlytePublication {
   last_error: string
   access_group: string
   organization: string
+  project: string
+  domain: DeploymentDomain
   channel_id: number
   pricing_configured: boolean
   bindings: FlytePublicationBinding[]
@@ -406,6 +416,7 @@ export interface DeploymentCodeSource {
 }
 
 export interface DeploymentFormData {
+  domain: DeploymentDomain
   name: string
   id: string
   code: string
@@ -446,7 +457,7 @@ export interface DeploymentSettingsResponse {
     enabled: boolean
     base_url: string
     project: string
-    domain: string
+    domains: DeploymentDomain[]
     configured: boolean
     publication_enabled: boolean
   }

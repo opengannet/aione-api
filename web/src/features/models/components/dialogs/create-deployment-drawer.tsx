@@ -7,7 +7,7 @@ published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2 } from 'lucide-react'
+import { ExternalLink, Loader2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -16,6 +16,14 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Sheet,
   SheetContent,
@@ -33,9 +41,15 @@ import {
   publishDeployment,
 } from '../../api'
 import { deploymentsQueryKeys } from '../../lib'
-import type { DeploymentFormData, NewPublicationToken } from '../../types'
+import {
+  DEPLOYMENT_DOMAINS,
+  type DeploymentDomain,
+  type DeploymentFormData,
+  type NewPublicationToken,
+} from '../../types'
 
 const defaults: DeploymentFormData = {
+  domain: 'development',
   name: '',
   id: '',
   code: '',
@@ -66,9 +80,13 @@ const newTokenDefaults: NewPublicationToken = {
 export function CreateDeploymentDrawer({
   open,
   onOpenChange,
+  currentDomain,
+  onCreated,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  currentDomain: DeploymentDomain
+  onCreated: (domain: DeploymentDomain) => void
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -88,9 +106,22 @@ export function CreateDeploymentDrawer({
   })
   const publicationEnabled =
     settingsResponse?.data?.publication_enabled === true
+  const deploymentDomains =
+    settingsResponse?.data?.domains ?? DEPLOYMENT_DOMAINS
+  const settingsBaseURL = settingsResponse?.data?.base_url
+    .trim()
+    .replace(/\/$/, '')
+  const settingsProject = settingsResponse?.data?.project.trim()
+  const apiKeysURL =
+    settingsBaseURL && settingsProject
+      ? `${settingsBaseURL}/domain/${values.domain}/project/${encodeURIComponent(settingsProject)}/api-keys`
+      : ''
   useEffect(() => {
-    if (open) setPublishAfterCreate(publicationEnabled)
-  }, [open, publicationEnabled])
+    if (open) {
+      setPublishAfterCreate(publicationEnabled)
+      setValues((current) => ({ ...current, domain: currentDomain }))
+    }
+  }, [currentDomain, open, publicationEnabled])
   const resource = values.resourceDefinition
   const source = values.codes[0]
   const set = <K extends keyof DeploymentFormData>(
@@ -157,14 +188,18 @@ export function CreateDeploymentDrawer({
       return
     }
     if (publishAfterCreate && response.data?.id) {
-      const publication = await publishDeployment(response.data.id, {
-        access_group: accessGroup.trim(),
-        token_ids: parsedTokenIDs,
-        idempotency_key: crypto.randomUUID(),
-        new_token: createNewToken
-          ? { ...newToken, name: newToken.name.trim() }
-          : undefined,
-      })
+      const publication = await publishDeployment(
+        values.domain,
+        response.data.id,
+        {
+          access_group: accessGroup.trim(),
+          token_ids: parsedTokenIDs,
+          idempotency_key: crypto.randomUUID(),
+          new_token: createNewToken
+            ? { ...newToken, name: newToken.name.trim() }
+            : undefined,
+        }
+      )
       if (!publication.success) {
         setSubmitting(false)
         toast.error(
@@ -181,7 +216,8 @@ export function CreateDeploymentDrawer({
       toast.success(t('Deployment created'))
     }
     setSubmitting(false)
-    setValues(defaults)
+    onCreated(values.domain)
+    setValues({ ...defaults, domain: values.domain })
     onOpenChange(false)
     void queryClient.invalidateQueries({
       queryKey: deploymentsQueryKeys.lists(),
@@ -195,7 +231,7 @@ export function CreateDeploymentDrawer({
           <SheetTitle>{t('Create deployment')}</SheetTitle>
           <SheetDescription>
             {t(
-              'Create a VLLM application in the configured Flyte2 project and domain.'
+              'Create a VLLM application in the configured Flyte2 project and selected domain.'
             )}
           </SheetDescription>
         </SheetHeader>
@@ -204,6 +240,41 @@ export function CreateDeploymentDrawer({
           className='grid gap-5 px-4 md:grid-cols-2'
           onSubmit={submit}
         >
+          <Field label={t('Deployment domain')} className='md:col-span-2'>
+            <div className='flex flex-wrap items-center gap-2'>
+              <Select
+                value={values.domain}
+                onValueChange={(domain) =>
+                  set('domain', domain as DeploymentDomain)
+                }
+              >
+                <SelectTrigger className='min-w-48'>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  <SelectGroup>
+                    {deploymentDomains.map((domain) => (
+                      <SelectItem key={domain} value={domain}>
+                        {t(domainLabel(domain))}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              {apiKeysURL ? (
+                <Button
+                  type='button'
+                  variant='outline'
+                  render={
+                    <a href={apiKeysURL} target='_blank' rel='noreferrer' />
+                  }
+                >
+                  <ExternalLink className='size-4' />
+                  {t('Open Flyte2 API Keys')}
+                </Button>
+              ) : null}
+            </div>
+          </Field>
           <Field label={t('Name')}>
             <Input
               value={values.name}
@@ -463,6 +534,10 @@ export function CreateDeploymentDrawer({
       </SheetContent>
     </Sheet>
   )
+}
+
+function domainLabel(domain: DeploymentDomain) {
+  return domain.charAt(0).toUpperCase() + domain.slice(1)
 }
 
 function Field({

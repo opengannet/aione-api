@@ -22,23 +22,26 @@ import {
 
 import { getDeployment } from '../../api'
 import { deploymentsQueryKeys } from '../../lib'
+import type { DeploymentDomain } from '../../types'
 import { deploymentStatusName } from '../deployments-columns'
 
 export function ViewDetailsDialog({
   open,
   onOpenChange,
   deploymentId,
+  domain,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   deploymentId: string | number | null
+  domain: DeploymentDomain
 }) {
   const { t } = useTranslation()
   const { data, isLoading } = useQuery({
-    queryKey: deploymentsQueryKeys.detail(deploymentId ?? ''),
+    queryKey: deploymentsQueryKeys.detail(domain, deploymentId ?? ''),
     queryFn: () => {
       if (deploymentId === null) throw new Error('deployment ID is required')
-      return getDeployment(deploymentId)
+      return getDeployment(domain, deploymentId)
     },
     enabled: open && deploymentId !== null,
   })

@@ -84,7 +84,6 @@ const defaultModelSettings: ModelSettings = {
   'model_deployment.flyte2.enabled': false,
   'model_deployment.flyte2.base_url': '',
   'model_deployment.flyte2.project': 'aione',
-  'model_deployment.flyte2.domain': 'development',
   'model_deployment.flyte2.api_key': '',
   'model_deployment.flyte2.publication_enabled': false,
 }

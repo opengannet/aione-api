@@ -707,11 +707,22 @@ export function useChannelsColumns(
                   />
                   {channel.flyte2_managed ? (
                     <a
-                      href='/models/deployments'
+                      href={
+                        channel.flyte2_domain
+                          ? `/models/deployments?dDomain=${channel.flyte2_domain}`
+                          : '/models/deployments'
+                      }
                       onClick={(event) => event.stopPropagation()}
                     >
                       <StatusBadge
-                        label={t('Flyte2 managed')}
+                        label={
+                          channel.flyte2_domain
+                            ? `${t('Flyte2 managed')} · ${t(
+                                channel.flyte2_domain.charAt(0).toUpperCase() +
+                                  channel.flyte2_domain.slice(1)
+                              )}`
+                            : t('Flyte2 managed')
+                        }
                         variant='blue'
                         size='sm'
                         copyable={false}

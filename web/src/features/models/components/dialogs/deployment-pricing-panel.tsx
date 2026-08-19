@@ -37,9 +37,11 @@ import {
   deploymentPricingPayload,
   type DeploymentPricingFormValues,
 } from '../../lib/deployment-pricing'
+import type { DeploymentDomain } from '../../types'
 
 type DeploymentPricingPanelProps = {
   deploymentId: string
+  domain: DeploymentDomain
   onStatusChange: (configured: boolean) => void
   onSaved: () => Promise<void>
 }
@@ -49,10 +51,13 @@ export function DeploymentPricingPanel(props: DeploymentPricingPanelProps) {
   const queryClient = useQueryClient()
   const onStatusChange = props.onStatusChange
   const [editing, setEditing] = useState(false)
-  const queryKey = deploymentsQueryKeys.pricing(props.deploymentId)
+  const queryKey = deploymentsQueryKeys.pricing(
+    props.domain,
+    props.deploymentId
+  )
   const pricingQuery = useQuery({
     queryKey,
-    queryFn: () => getDeploymentPricing(props.deploymentId),
+    queryFn: () => getDeploymentPricing(props.domain, props.deploymentId),
   })
   const pricing = pricingQuery.data?.data
   const schema = useMemo(() => createDeploymentPricingSchema(t), [t])
@@ -73,6 +78,7 @@ export function DeploymentPricingPanel(props: DeploymentPricingPanelProps) {
   const saveMutation = useMutation({
     mutationFn: (values: DeploymentPricingFormValues) =>
       updateDeploymentPricing(
+        props.domain,
         props.deploymentId,
         deploymentPricingPayload(values)
       ),

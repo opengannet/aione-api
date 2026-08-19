@@ -220,7 +220,7 @@ setting.saved: "Settings updated"
 # Deployment messages (Flyte2)
 deployment.not_enabled: "Flyte2 model deployment is not enabled"
 deployment.settings_missing: "Flyte2 deployment settings are incomplete"
-deployment.settings_required: "Base URL, project, domain, and API key are required when Flyte2 deployment is enabled"
+deployment.settings_required: "Base URL, project, and API key are required when Flyte2 deployment is enabled"
 deployment.save_failed: "Failed to save Flyte2 deployment settings"
 deployment.id_required: "Deployment ID is required"
 deployment.invalid_payload: "Invalid request payload"
@@ -234,6 +234,7 @@ deployment.pricing_request_invalid: "Request price must be a non-negative number
 deployment.pricing_save_failed: "Failed to save model pricing"
 deployment.scope_locked: "Flyte2 scope cannot be changed while gateways or publications exist"
 deployment.key_clear_disabled: "The Flyte2 API key can only be cleared while deployment is disabled"
+deployment.domain_invalid: "Domain must be development, production, or staging"
 
 # Performance messages
 performance.disk_cache_cleared: "Inactive disk cache has been cleared"

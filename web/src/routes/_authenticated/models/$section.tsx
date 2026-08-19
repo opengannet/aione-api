@@ -24,6 +24,7 @@ import {
   MODELS_SECTION_IDS,
   MODELS_DEFAULT_SECTION,
 } from '@/features/models/section-registry'
+import { DEPLOYMENT_DOMAINS } from '@/features/models/types'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -38,6 +39,7 @@ const modelsSearchSchema = z.object({
   dPageSize: z.number().optional().catch(10),
   dFilter: z.string().optional().catch(''),
   dStatus: z.array(z.string()).optional().catch([]),
+  dDomain: z.enum(DEPLOYMENT_DOMAINS).optional().catch('development'),
   deployment: z.string().optional(),
 })
 

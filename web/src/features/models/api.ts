@@ -303,7 +303,6 @@ export async function updateDeploymentSettings(data: {
   enabled: boolean
   base_url: string
   project: string
-  domain: string
   api_key?: string
   clear_api_key?: boolean
   publication_enabled?: boolean
@@ -316,13 +315,16 @@ export async function testDeploymentConnection(
   data: {
     base_url?: string
     project?: string
-    domain?: string
     api_key?: string
   } = {}
 ): Promise<{
   success: boolean
   message?: string
-  data?: { connected: boolean; model_count: number; org: string }
+  data?: {
+    connected: boolean
+    model_counts: Record<import('./types').DeploymentDomain, number>
+    org: string
+  }
 }> {
   const config = { skipErrorHandler: true } as unknown as Parameters<
     typeof api.post
@@ -336,6 +338,7 @@ export async function testDeploymentConnection(
 }
 
 export async function listDeployments(params: {
+  domain: import('./types').DeploymentDomain
   p?: number
   page_size?: number
   status?: string
@@ -345,27 +348,36 @@ export async function listDeployments(params: {
   return res.data
 }
 
-export async function getDeployment(id: string | number): Promise<{
+export async function getDeployment(
+  domain: import('./types').DeploymentDomain,
+  id: string | number
+): Promise<{
   success: boolean
   message?: string
   data?: DeploymentDetail
 }> {
-  const res = await api.get(`/api/deployments/${id}`)
+  const res = await api.get(`/api/deployments/${id}`, { params: { domain } })
   return res.data
 }
 
 export async function deleteDeployment(
+  domain: import('./types').DeploymentDomain,
   id: string | number
 ): Promise<{ success: boolean; message?: string }> {
-  const res = await api.delete(`/api/deployments/${id}`)
+  const res = await api.delete(`/api/deployments/${id}`, {
+    params: { domain },
+  })
   return res.data
 }
 
 export async function getDeploymentLogs(
+  domain: import('./types').DeploymentDomain,
   deploymentId: string | number,
   params: { page?: number; size?: number }
 ): Promise<DeploymentLogsResponse> {
-  const res = await api.get(`/api/deployments/${deploymentId}/logs`, { params })
+  const res = await api.get(`/api/deployments/${deploymentId}/logs`, {
+    params: { ...params, domain },
+  })
   return res.data
 }
 
@@ -379,6 +391,7 @@ export async function createDeployment(data: DeploymentFormData): Promise<{
 }
 
 export async function updateDeployment(
+  domain: import('./types').DeploymentDomain,
   id: string | number,
   data: Pick<
     DeploymentFormData,
@@ -389,28 +402,45 @@ export async function updateDeployment(
   message?: string
   data?: DeploymentDetail
 }> {
-  const res = await api.put(`/api/deployments/${id}`, data)
+  const res = await api.put(`/api/deployments/${id}`, data, {
+    params: { domain },
+  })
   return res.data
 }
 
-export async function startDeployment(id: string | number): Promise<{
+export async function startDeployment(
+  domain: import('./types').DeploymentDomain,
+  id: string | number
+): Promise<{
   success: boolean
   message?: string
 }> {
-  const res = await api.post(`/api/deployments/${id}/start`)
+  const res = await api.post(`/api/deployments/${id}/start`, undefined, {
+    params: { domain },
+  })
   return res.data
 }
 
-export async function stopDeployment(id: string | number): Promise<{
+export async function stopDeployment(
+  domain: import('./types').DeploymentDomain,
+  id: string | number
+): Promise<{
   success: boolean
   message?: string
 }> {
-  const res = await api.post(`/api/deployments/${id}/stop`)
+  const res = await api.post(`/api/deployments/${id}/stop`, undefined, {
+    params: { domain },
+  })
   return res.data
 }
 
-export async function getDeploymentPublication(id: string | number) {
-  const res = await api.get(`/api/deployments/${id}/publication`)
+export async function getDeploymentPublication(
+  domain: import('./types').DeploymentDomain,
+  id: string | number
+) {
+  const res = await api.get(`/api/deployments/${id}/publication`, {
+    params: { domain },
+  })
   return res.data as {
     success: boolean
     message?: string
@@ -418,8 +448,13 @@ export async function getDeploymentPublication(id: string | number) {
   }
 }
 
-export async function getDeploymentPricing(id: string | number) {
-  const res = await api.get(`/api/deployments/${id}/pricing`)
+export async function getDeploymentPricing(
+  domain: import('./types').DeploymentDomain,
+  id: string | number
+) {
+  const res = await api.get(`/api/deployments/${id}/pricing`, {
+    params: { domain },
+  })
   return res.data as {
     success: boolean
     message?: string
@@ -428,11 +463,14 @@ export async function getDeploymentPricing(id: string | number) {
 }
 
 export async function updateDeploymentPricing(
+  domain: import('./types').DeploymentDomain,
   id: string | number,
   data: import('./types').UpdateDeploymentPricing
 ) {
   try {
-    const res = await api.put(`/api/deployments/${id}/pricing`, data)
+    const res = await api.put(`/api/deployments/${id}/pricing`, data, {
+      params: { domain },
+    })
     return res.data as {
       success: boolean
       message?: string
@@ -447,6 +485,7 @@ export async function updateDeploymentPricing(
 }
 
 export async function publishDeployment(
+  domain: import('./types').DeploymentDomain,
   id: string | number,
   data: {
     access_group: string
@@ -457,7 +496,9 @@ export async function publishDeployment(
   }
 ) {
   try {
-    const res = await api.post(`/api/deployments/${id}/publication`, data)
+    const res = await api.post(`/api/deployments/${id}/publication`, data, {
+      params: { domain },
+    })
     return res.data as {
       success: boolean
       message?: string
@@ -473,44 +514,65 @@ export async function publishDeployment(
   }
 }
 
-export async function unpublishDeployment(id: string | number) {
-  const res = await api.delete(`/api/deployments/${id}/publication`)
-  return res.data as { success: boolean; message?: string }
-}
-
-export async function addDeploymentPublicationBindings(
-  id: string | number,
-  tokenIds: number[]
+export async function unpublishDeployment(
+  domain: import('./types').DeploymentDomain,
+  id: string | number
 ) {
-  const res = await api.post(`/api/deployments/${id}/publication/bindings`, {
-    token_ids: tokenIds,
-    idempotency_key: crypto.randomUUID(),
+  const res = await api.delete(`/api/deployments/${id}/publication`, {
+    params: { domain },
   })
   return res.data as { success: boolean; message?: string }
 }
 
-export async function removeDeploymentPublicationBinding(
+export async function addDeploymentPublicationBindings(
+  domain: import('./types').DeploymentDomain,
   id: string | number,
-  tokenId: number
+  tokenIds: number[]
 ) {
-  const res = await api.delete(
-    `/api/deployments/${id}/publication/bindings/${tokenId}`
+  const res = await api.post(
+    `/api/deployments/${id}/publication/bindings`,
+    {
+      token_ids: tokenIds,
+      idempotency_key: crypto.randomUUID(),
+    },
+    { params: { domain } }
   )
   return res.data as { success: boolean; message?: string }
 }
 
-export async function reconcileDeploymentPublication(id: string | number) {
-  const res = await api.post(`/api/deployments/${id}/publication/reconcile`)
+export async function removeDeploymentPublicationBinding(
+  domain: import('./types').DeploymentDomain,
+  id: string | number,
+  tokenId: number
+) {
+  const res = await api.delete(
+    `/api/deployments/${id}/publication/bindings/${tokenId}`,
+    { params: { domain } }
+  )
+  return res.data as { success: boolean; message?: string }
+}
+
+export async function reconcileDeploymentPublication(
+  domain: import('./types').DeploymentDomain,
+  id: string | number
+) {
+  const res = await api.post(
+    `/api/deployments/${id}/publication/reconcile`,
+    undefined,
+    { params: { domain } }
+  )
   return res.data as { success: boolean; message?: string }
 }
 
 export async function updateDeploymentPublicationUpstreamModel(
+  domain: import('./types').DeploymentDomain,
   id: string | number,
   upstreamModel: string
 ) {
   const res = await api.put(
     `/api/deployments/${id}/publication/upstream-model`,
-    { upstream_model: upstreamModel }
+    { upstream_model: upstreamModel },
+    { params: { domain } }
   )
   return res.data as { success: boolean; message?: string }
 }

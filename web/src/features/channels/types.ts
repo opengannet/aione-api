@@ -73,6 +73,7 @@ export const channelSchema = z.object({
   settings: z.string().default('{}'), // other_settings JSON
   flyte2_managed: z.boolean().default(false),
   flyte_gateway_id: z.number().optional(),
+  flyte2_domain: z.enum(['development', 'production', 'staging']).optional(),
 })
 
 export type Channel = z.infer<typeof channelSchema>

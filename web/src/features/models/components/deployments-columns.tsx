@@ -55,10 +55,10 @@ function deploymentStatusVariant(status: number) {
 }
 
 export function useDeploymentsColumns(opts: {
-  onViewLogs: (id: string) => void
-  onViewDetails: (id: string) => void
-  onUpdate: (id: string) => void
-  onPublication: (id: string) => void
+  onViewLogs: (deployment: Deployment) => void
+  onViewDetails: (deployment: Deployment) => void
+  onUpdate: (deployment: Deployment) => void
+  onPublication: (deployment: Deployment) => void
   onStart: (deployment: Deployment) => void
   onStop: (deployment: Deployment) => void
   onDelete: (deployment: Deployment) => void
@@ -178,29 +178,25 @@ export function useDeploymentsColumns(opts: {
             <Button
               variant='ghost'
               size='icon-sm'
-              onClick={() => opts.onViewLogs(deployment.id)}
+              onClick={() => opts.onViewLogs(deployment)}
               aria-label={t('View logs')}
             >
               <FileText />
             </Button>
             <DataTableRowActionMenu ariaLabel={t('Open menu')}>
-              <DropdownMenuItem
-                onClick={() => opts.onViewDetails(deployment.id)}
-              >
+              <DropdownMenuItem onClick={() => opts.onViewDetails(deployment)}>
                 {t('View details')}
                 <DropdownMenuShortcut>
                   <Info size={16} />
                 </DropdownMenuShortcut>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => opts.onUpdate(deployment.id)}>
+              <DropdownMenuItem onClick={() => opts.onUpdate(deployment)}>
                 {t('Edit')}
                 <DropdownMenuShortcut>
                   <Pencil size={16} />
                 </DropdownMenuShortcut>
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => opts.onPublication(deployment.id)}
-              >
+              <DropdownMenuItem onClick={() => opts.onPublication(deployment)}>
                 {t('Publication and API keys')}
                 <DropdownMenuShortcut>
                   <KeyRound size={16} />

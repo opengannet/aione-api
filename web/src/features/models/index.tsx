@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQueryClient } from '@tanstack/react-query'
-import { getRouteApi, useNavigate } from '@tanstack/react-router'
+import { getRouteApi } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -41,6 +41,7 @@ import {
   MODELS_DEFAULT_SECTION,
   MODELS_SECTION_IDS,
 } from './section-registry'
+import type { DeploymentDomain } from './types'
 
 const route = getRouteApi('/_authenticated/models/$section')
 
@@ -55,9 +56,10 @@ const SECTION_META: Record<ModelsSectionId, { titleKey: string }> = {
 
 function ModelsContent() {
   const { t } = useTranslation()
-  const navigate = useNavigate()
+  const navigate = route.useNavigate()
   const { tabCategory, setTabCategory } = useModels()
   const params = route.useParams()
+  const routeSearch = route.useSearch()
   const activeSection = (params.section ??
     MODELS_DEFAULT_SECTION) as ModelsSectionId
 
@@ -82,6 +84,23 @@ function ModelsContent() {
   )
 
   const meta = SECTION_META[activeSection] ?? SECTION_META.metadata
+  const currentDomain = routeSearch.dDomain ?? 'development'
+
+  const handleDeploymentCreated = useCallback(
+    (domain: DeploymentDomain) => {
+      void navigate({
+        to: '/models/$section',
+        params: { section: 'deployments' },
+        search: (previous) => ({
+          ...previous,
+          dDomain: domain,
+          dPage: 1,
+          deployment: undefined,
+        }),
+      })
+    },
+    [navigate]
+  )
 
   return (
     <>
@@ -123,6 +142,8 @@ function ModelsContent() {
       <CreateDeploymentDrawer
         open={createDeploymentOpen}
         onOpenChange={setCreateDeploymentOpen}
+        currentDomain={currentDomain}
+        onCreated={handleDeploymentCreated}
       />
     </>
   )
@@ -130,6 +151,8 @@ function ModelsContent() {
 
 function DeploymentsSection() {
   const queryClient = useQueryClient()
+  const routeSearch = route.useSearch()
+  const domain = routeSearch.dDomain ?? 'development'
   const {
     loading: deploymentLoading,
     loadingPhase,
@@ -143,14 +166,14 @@ function DeploymentsSection() {
   // Prefetch deployments list while connection check is in progress.
   useEffect(() => {
     if (isFlyte2Enabled && loadingPhase === 'connection') {
-      const defaultParams = { p: 1, page_size: 10 }
+      const defaultParams = { domain, p: 1, page_size: 10 }
       queryClient.prefetchQuery({
         queryKey: deploymentsQueryKeys.list(defaultParams),
         queryFn: () => listDeployments(defaultParams),
         staleTime: 30 * 1000,
       })
     }
-  }, [isFlyte2Enabled, loadingPhase, queryClient])
+  }, [domain, isFlyte2Enabled, loadingPhase, queryClient])
 
   return (
     <DeploymentAccessGuard
