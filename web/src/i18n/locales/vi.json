@@ -5308,6 +5308,8 @@
     "Zero retention": "Không lưu dữ liệu",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "This channel is managed by Flyte2. Only tag, priority, and weight can be edited here.": "Kênh này do Flyte2 quản lý. Chỉ có thể chỉnh sửa thẻ, độ ưu tiên và trọng số tại đây.",
+    "Flyte2 managed channels do not use an upstream API key.": "Các kênh do Flyte2 quản lý không sử dụng khóa API thượng nguồn."
   }
 }

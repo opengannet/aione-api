@@ -62,6 +62,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { MODEL_FETCHABLE_TYPES } from '../constants'
 import {
   channelsQueryKeys,
+  getChannelActionPermissions,
   handleDeleteChannel,
   handleTestChannel,
   handleToggleChannelStatus,
@@ -95,10 +96,20 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
     ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
   )
-  const canMutateDefinition = canEditSensitive && !channel.flyte2_managed
+  const canWriteChannel = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.WRITE
+  )
+  const { canEdit: canEditChannel, canMutateDefinition } =
+    getChannelActionPermissions({
+      flyte2Managed: channel.flyte2_managed,
+      canWrite: canWriteChannel,
+      canSensitiveWrite: canEditSensitive,
+    })
 
   const handleEdit = () => {
-    if (!canMutateDefinition) return
+    if (!canEditChannel) return
     setCurrentRow(channel)
     setOpen('update-channel')
   }
@@ -173,7 +184,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
               <Button
                 variant='ghost'
                 size='icon-sm'
-                disabled={!canMutateDefinition}
+                disabled={!canEditChannel}
                 onClick={(e) => {
                   e.stopPropagation()
                   handleEdit()
@@ -268,10 +279,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align='end' className='w-48'>
           {layout === 'card' && (
-            <DropdownMenuItem
-              disabled={!canMutateDefinition}
-              onClick={handleEdit}
-            >
+            <DropdownMenuItem disabled={!canEditChannel} onClick={handleEdit}>
               {t('Edit')}
               <DropdownMenuShortcut>
                 <Pencil size={16} />

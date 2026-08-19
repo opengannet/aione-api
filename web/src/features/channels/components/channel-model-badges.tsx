@@ -16,13 +16,30 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-// Re-export all library functions
-export * from './channel-actions'
-export * from './advanced-custom'
-export * from './channel-form-errors'
-export * from './channel-form'
-export * from './channel-action-permissions'
-export * from './channel-type-config'
-export * from './channel-utils'
-export * from './multi-key-utils'
-export * from './model-mapping-validation'
+import { BadgeListCell } from '@/components/data-table'
+import { StatusBadge } from '@/components/status-badge'
+
+import { parseModelsList } from '../lib'
+
+type ChannelModelBadgesProps = {
+  models: string
+}
+
+export function ChannelModelBadges({ models }: ChannelModelBadgesProps) {
+  const modelArray = parseModelsList(models)
+
+  return (
+    <BadgeListCell
+      max={2}
+      items={modelArray.map((model) => (
+        <StatusBadge
+          key={model}
+          label={model}
+          autoColor={model}
+          size='sm'
+          className='font-mono'
+        />
+      ))}
+    />
+  )
+}

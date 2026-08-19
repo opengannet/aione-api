@@ -31,6 +31,7 @@ import { createChannel, updateChannel } from '../api'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import {
   transformFormDataToCreatePayload,
+  transformFormDataToFlyteManagedTuningPayload,
   transformFormDataToUpdatePayload,
   type ChannelFormValues,
 } from '../lib'
@@ -92,19 +93,25 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
   return useMutation({
     mutationFn: async (data: ChannelFormValues): Promise<string> => {
       if (props.isEditing && props.currentRow) {
-        const payload = transformFormDataToUpdatePayload(
-          data,
-          props.currentRow.id
-        )
-        if (!data.key?.trim()) {
-          delete payload.key
-        }
-        if (!canEditSensitive) {
-          for (const field of SENSITIVE_UPDATE_FIELDS) {
-            delete payload[field]
+        let payload: Partial<Channel>
+        if (props.currentRow.flyte2_managed) {
+          payload = transformFormDataToFlyteManagedTuningPayload(
+            data,
+            props.currentRow.id
+          )
+        } else {
+          payload = transformFormDataToUpdatePayload(data, props.currentRow.id)
+          if (!data.key?.trim()) {
+            delete payload.key
+          }
+          if (!canEditSensitive) {
+            for (const field of SENSITIVE_UPDATE_FIELDS) {
+              delete payload[field]
+            }
           }
         }
         const payloadWithKeyMode =
+          !props.currentRow.flyte2_managed &&
           canEditSensitive &&
           props.isMultiKeyChannel &&
           data.key?.trim() &&

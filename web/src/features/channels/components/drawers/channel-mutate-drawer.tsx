@@ -44,6 +44,7 @@ import {
   Wand2,
 } from 'lucide-react'
 import {
+  type FormEvent,
   type ReactNode,
   useEffect,
   useState,
@@ -649,7 +650,9 @@ export function ChannelMutateDrawer({
 
   const isEditing = Boolean(currentRow)
   const channelId = currentRow?.id ?? null
+  const isFlyteManaged = isEditing && currentRow?.flyte2_managed === true
   const sensitiveLocked = isEditing && !canEditSensitive
+  const definitionLocked = sensitiveLocked || isFlyteManaged
 
   // Fetch channel details if editing
   const { data: channelData, isLoading: isChannelLoading } = useQuery({
@@ -761,14 +764,16 @@ export function ChannelMutateDrawer({
   )
   const shouldPreviewUnsavedModels =
     !isEditing ||
-    (currentType === CHANNEL_TYPE_ADVANCED_CUSTOM && canEditSensitive)
+    (currentType === CHANNEL_TYPE_ADVANCED_CUSTOM &&
+      canEditSensitive &&
+      !isFlyteManaged)
   const {
     unlocked: doubaoApiEditUnlocked,
     handleClick: handleApiConfigSecretClick,
     reset: resetDoubaoApiUnlock,
   } = useHiddenClickUnlock({
     requiredClicks: 10,
-    disabled: currentType !== 45 || sensitiveLocked,
+    disabled: currentType !== 45 || definitionLocked,
     onUnlock: () => {
       toast.info(t('Doubao custom API address editing unlocked'))
     },
@@ -1366,7 +1371,7 @@ export function ChannelMutateDrawer({
   )
 
   const handleRevealKey = useCallback(async () => {
-    if (!channelId) return
+    if (!channelId || isFlyteManaged) return
 
     try {
       await withVerification(fetchChannelKey, {
@@ -1382,7 +1387,7 @@ export function ChannelMutateDrawer({
         toast.error(error.message)
       }
     }
-  }, [channelId, withVerification, fetchChannelKey, t])
+  }, [channelId, isFlyteManaged, withVerification, fetchChannelKey, t])
 
   const handleRefreshCodexCredential = useCallback(async () => {
     if (!channelId) return
@@ -1417,6 +1422,8 @@ export function ChannelMutateDrawer({
 
   // Handle fetching models from upstream
   const handleFetchModels = useCallback(async () => {
+    if (isFlyteManaged) return
+
     const type = form.getValues('type')
 
     if (!MODEL_FETCHABLE_TYPES.has(type)) {
@@ -1439,7 +1446,7 @@ export function ChannelMutateDrawer({
     }
 
     setFetchModelsDialogOpen(true)
-  }, [isEditing, canEditSensitive, form, t])
+  }, [isFlyteManaged, isEditing, canEditSensitive, form, t])
 
   const formPreviewFetcher = useCallback(async (): Promise<string[]> => {
     if (!canEditSensitive) {
@@ -1722,6 +1729,15 @@ export function ChannelMutateDrawer({
     ]
   )
 
+  const onManagedSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (!isFlyteManaged) return
+      await channelMutation.mutateAsync(form.getValues())
+    },
+    [channelMutation, form, isFlyteManaged]
+  )
+
   const handleAdvancedSettingsOpenChange = useCallback((nextOpen: boolean) => {
     if (!nextOpen) {
       advancedNavScrollPendingRef.current = false
@@ -1889,7 +1905,17 @@ export function ChannelMutateDrawer({
             </div>
           </SheetHeader>
 
-          {sensitiveLocked && (
+          {isFlyteManaged && (
+            <Alert className='border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-50'>
+              <AlertDescription>
+                {t(
+                  'This channel is managed by Flyte2. Only tag, priority, and weight can be edited here.'
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {sensitiveLocked && !isFlyteManaged && (
             <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
               <AlertDescription>
                 {t(
@@ -1931,7 +1957,11 @@ export function ChannelMutateDrawer({
             <form
               id='channel-form'
               ref={channelFormRef}
-              onSubmit={form.handleSubmit(onSubmit, onInvalid)}
+              onSubmit={
+                isFlyteManaged
+                  ? onManagedSubmit
+                  : form.handleSubmit(onSubmit, onInvalid)
+              }
               className={sideDrawerFormClassName('gap-5')}
             >
               {isChannelDetailLoading ? (
@@ -1960,7 +1990,7 @@ export function ChannelMutateDrawer({
                       <ChannelBasicSection>
                         <div className='grid gap-4 sm:grid-cols-2'>
                           <fieldset
-                            disabled={sensitiveLocked}
+                            disabled={definitionLocked}
                             className='min-w-0 disabled:opacity-60'
                           >
                             <FormField
@@ -2022,6 +2052,7 @@ export function ChannelMutateDrawer({
                                 <FormControl>
                                   <Input
                                     placeholder={t(FIELD_PLACEHOLDERS.NAME)}
+                                    disabled={isFlyteManaged}
                                     {...field}
                                   />
                                 </FormControl>
@@ -2060,7 +2091,7 @@ export function ChannelMutateDrawer({
 
                         {currentType === 1 && (
                           <fieldset
-                            disabled={sensitiveLocked}
+                            disabled={definitionLocked}
                             className='disabled:opacity-60'
                           >
                             <FormField
@@ -2107,7 +2138,7 @@ export function ChannelMutateDrawer({
                           </Alert>
                         )}
 
-                        {sensitiveLocked && (
+                        {sensitiveLocked && !isFlyteManaged && (
                           <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
                             <AlertDescription>
                               {t('No permission to perform this action')}
@@ -2117,7 +2148,7 @@ export function ChannelMutateDrawer({
 
                         <div className='border-border/60 bg-muted/10 rounded-lg border p-4'>
                           <fieldset
-                            disabled={sensitiveLocked}
+                            disabled={definitionLocked}
                             className='space-y-4 disabled:opacity-60'
                           >
                             {/* Azure (type 3) */}
@@ -2838,6 +2869,7 @@ export function ChannelMutateDrawer({
                                         type='button'
                                         variant='outline'
                                         size='sm'
+                                        disabled={definitionLocked}
                                         onClick={() =>
                                           setAdvancedCustomEditorOpen(true)
                                         }
@@ -2948,7 +2980,11 @@ export function ChannelMutateDrawer({
                                   let keyDescription: ReactNode = t(
                                     FIELD_DESCRIPTIONS.KEY
                                   )
-                                  if (isEditing) {
+                                  if (isFlyteManaged) {
+                                    keyDescription = t(
+                                      'Flyte2 managed channels do not use an upstream API key.'
+                                    )
+                                  } else if (isEditing) {
                                     let keyModeDescription = t(
                                       'Append mode: New keys will be added to the end of the existing key list'
                                     )
@@ -3001,7 +3037,9 @@ export function ChannelMutateDrawer({
                                           )}
                                         </div>
                                       </FormDescription>
-                                      {isEditing && canRevealChannelKey && (
+                                      {isEditing &&
+                                        canRevealChannelKey &&
+                                        !isFlyteManaged && (
                                         <div className='border-border/60 mt-4 flex flex-col gap-3 border-y border-dashed py-4'>
                                           <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
                                             <div>
@@ -3083,7 +3121,7 @@ export function ChannelMutateDrawer({
                                           size='sm'
                                           onClick={handleRefreshCodexCredential}
                                           disabled={
-                                            sensitiveLocked ||
+                                            definitionLocked ||
                                             isCodexCredentialRefreshing
                                           }
                                         >
@@ -3239,7 +3277,11 @@ export function ChannelMutateDrawer({
                       className='scroll-mt-4'
                     >
                       <ChannelModelsSection>
-                        <div className='space-y-5'>
+                        <fieldset
+                          disabled={isFlyteManaged}
+                          className='min-w-0 disabled:opacity-60'
+                        >
+                          <div className='space-y-5'>
                           <div className='border-border/60 bg-muted/10 rounded-lg border p-4'>
                             <FormField
                               control={form.control}
@@ -3271,6 +3313,7 @@ export function ChannelMutateDrawer({
                                       createLabel='Add custom model "{{value}}"'
                                       maxVisibleChips={8}
                                       copyChipOnClick
+                                      disabled={isFlyteManaged}
                                     />
                                   </FormControl>
                                   {modelMappingGuardrail.exposedTargetModels
@@ -3508,7 +3551,9 @@ export function ChannelMutateDrawer({
                                     <ModelMappingEditor
                                       value={field.value || ''}
                                       onChange={field.onChange}
-                                      disabled={isSubmitting}
+                                      disabled={
+                                        isFlyteManaged || isSubmitting
+                                      }
                                       sourceModelOptions={currentModelsArray}
                                       targetModelOptions={modelOptions.map(
                                         (option) => option.value
@@ -3588,6 +3633,7 @@ export function ChannelMutateDrawer({
                                         placeholder={t(
                                           FIELD_PLACEHOLDERS.GROUP
                                         )}
+                                        disabled={isFlyteManaged}
                                       />
                                     )}
                                   </FormControl>
@@ -3596,7 +3642,8 @@ export function ChannelMutateDrawer({
                               )}
                             />
                           </div>
-                        </div>
+                          </div>
+                        </fieldset>
                       </ChannelModelsSection>
                     </div>
 
@@ -3689,6 +3736,7 @@ export function ChannelMutateDrawer({
                                       placeholder={t(
                                         FIELD_PLACEHOLDERS.TEST_MODEL
                                       )}
+                                      disabled={isFlyteManaged}
                                       {...field}
                                     />
                                   </FormControl>
@@ -3714,6 +3762,7 @@ export function ChannelMutateDrawer({
                                   <FormControl>
                                     <Switch
                                       checked={field.value === 1}
+                                      disabled={isFlyteManaged}
                                       onCheckedChange={(checked) =>
                                         field.onChange(checked ? 1 : 0)
                                       }
@@ -3769,6 +3818,7 @@ export function ChannelMutateDrawer({
                                           FIELD_PLACEHOLDERS.REMARK
                                         )}
                                         rows={2}
+                                        disabled={isFlyteManaged}
                                         {...field}
                                       />
                                     </FormControl>
@@ -3814,7 +3864,9 @@ export function ChannelMutateDrawer({
                                     <JsonEditor
                                       value={field.value || ''}
                                       onChange={field.onChange}
-                                      disabled={isSubmitting}
+                                      disabled={
+                                        isFlyteManaged || isSubmitting
+                                      }
                                       keyPlaceholder='400'
                                       valuePlaceholder='500'
                                       keyLabel='Original Code'
@@ -3831,13 +3883,13 @@ export function ChannelMutateDrawer({
                               )}
                             />
 
-                            {sensitiveLocked && (
+                            {sensitiveLocked && !isFlyteManaged && (
                               <p className='text-muted-foreground text-xs'>
                                 {t('No permission to perform this action')}
                               </p>
                             )}
                             <fieldset
-                              disabled={sensitiveLocked}
+                              disabled={definitionLocked}
                               className='space-y-4 disabled:opacity-60'
                             >
                               <FormField
@@ -3916,7 +3968,7 @@ export function ChannelMutateDrawer({
                                         value={field.value || ''}
                                         onChange={field.onChange}
                                         disabled={
-                                          sensitiveLocked || isSubmitting
+                                          definitionLocked || isSubmitting
                                         }
                                         rows={8}
                                         placeholder={t(
@@ -4020,7 +4072,7 @@ export function ChannelMutateDrawer({
                                         value={field.value || ''}
                                         onChange={field.onChange}
                                         disabled={
-                                          sensitiveLocked || isSubmitting
+                                          definitionLocked || isSubmitting
                                         }
                                         placeholder={t(
                                           'Enter JSON to override request headers'
@@ -4061,7 +4113,7 @@ export function ChannelMutateDrawer({
                             icon={<Settings className='h-4 w-4' />}
                             iconTone='chart-3'
                           />
-                          {sensitiveLocked && (
+                          {sensitiveLocked && !isFlyteManaged && (
                             <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
                               <AlertDescription>
                                 {t('No permission to perform this action')}
@@ -4069,7 +4121,7 @@ export function ChannelMutateDrawer({
                             </Alert>
                           )}
                           <fieldset
-                            disabled={sensitiveLocked}
+                            disabled={definitionLocked}
                             className='space-y-4 disabled:opacity-60'
                           >
                             <div className='divide-border space-y-0 divide-y border-y'>
@@ -4270,7 +4322,7 @@ export function ChannelMutateDrawer({
                               iconTone='chart-4'
                             />
                             <fieldset
-                              disabled={sensitiveLocked}
+                              disabled={definitionLocked}
                               className='disabled:opacity-60'
                             >
                               <div className='divide-border space-y-0 divide-y border-y'>
@@ -4514,7 +4566,7 @@ export function ChannelMutateDrawer({
                               iconTone='info'
                             />
                             <fieldset
-                              disabled={sensitiveLocked}
+                              disabled={definitionLocked}
                               className='space-y-4 disabled:opacity-60'
                             >
                               <div className='divide-border space-y-0 divide-y border-y'>
@@ -4664,7 +4716,7 @@ export function ChannelMutateDrawer({
         </SheetContent>
       </Sheet>
 
-      {paramOverrideEditorOpen && !sensitiveLocked && (
+      {paramOverrideEditorOpen && !definitionLocked && (
         <ParamOverrideEditorDialog
           open={paramOverrideEditorOpen}
           value={form.watch('param_override') || ''}
@@ -4678,7 +4730,7 @@ export function ChannelMutateDrawer({
         />
       )}
 
-      {advancedCustomEditorOpen && !sensitiveLocked && (
+      {advancedCustomEditorOpen && !definitionLocked && (
         <AdvancedCustomEditorDialog
           open={advancedCustomEditorOpen}
           value={form.watch('advanced_custom') || ''}
@@ -4694,7 +4746,7 @@ export function ChannelMutateDrawer({
 
       {/* Fetch Models Dialog */}
       <FetchModelsDialog
-        open={fetchModelsDialogOpen}
+        open={fetchModelsDialogOpen && !isFlyteManaged}
         onOpenChange={setFetchModelsDialogOpen}
         onModelsSelected={(models) => {
           form.setValue('models', formatModelsArray(models))

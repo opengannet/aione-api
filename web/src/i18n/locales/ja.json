@@ -5308,6 +5308,8 @@
     "Zero retention": "データ保持なし",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "This channel is managed by Flyte2. Only tag, priority, and weight can be edited here.": "このチャネルは Flyte2 によって管理されています。ここではタグ、優先度、重みのみ編集できます。",
+    "Flyte2 managed channels do not use an upstream API key.": "Flyte2 管理チャネルはアップストリーム API キーを使用しません。"
   }
 }

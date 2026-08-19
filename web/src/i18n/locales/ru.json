@@ -5308,6 +5308,8 @@
     "Zero retention": "Без хранения данных",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "This channel is managed by Flyte2. Only tag, priority, and weight can be edited here.": "Этот канал управляется Flyte2. Здесь можно изменять только тег, приоритет и вес.",
+    "Flyte2 managed channels do not use an upstream API key.": "Каналы под управлением Flyte2 не используют API-ключ вышестоящего сервиса."
   }
 }

@@ -794,6 +794,26 @@ export function transformFormDataToUpdatePayload(
   return payload
 }
 
+export type FlyteManagedChannelTuningPayload = Pick<
+  Channel,
+  'id' | 'priority' | 'weight' | 'tag'
+>
+
+/**
+ * Build the deliberately narrow update allowed for a Flyte2-managed channel.
+ */
+export function transformFormDataToFlyteManagedTuningPayload(
+  formData: ChannelFormValues,
+  channelId: number
+): FlyteManagedChannelTuningPayload {
+  return {
+    id: channelId,
+    priority: formData.priority ?? 0,
+    weight: formData.weight ?? 0,
+    tag: formData.tag ?? '',
+  }
+}
+
 // ============================================================================
 // Validation Helpers
 // ============================================================================

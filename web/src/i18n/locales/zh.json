@@ -5308,6 +5308,8 @@
     "Zero retention": "零数据保留",
     "Zhipu": "智谱",
     "Zhipu V4": "智谱 V4",
-    "Zoom": "缩放"
+    "Zoom": "缩放",
+    "This channel is managed by Flyte2. Only tag, priority, and weight can be edited here.": "此渠道由 Flyte2 管理。这里只能编辑标签、优先级和权重。",
+    "Flyte2 managed channels do not use an upstream API key.": "Flyte2 托管渠道不使用上游 API Key。"
   }
 }

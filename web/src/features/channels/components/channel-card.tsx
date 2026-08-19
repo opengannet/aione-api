@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils'
 import { CHANNEL_STATUS } from '../constants'
 import { isTagAggregateRow, parseGroupsList } from '../lib'
 import type { Channel } from '../types'
+import { ChannelModelBadges } from './channel-model-badges'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
 import { useChannels } from './channels-provider'
 
@@ -154,6 +155,11 @@ function ChannelCardComponent({
               {testCell ?? <span className='text-muted-foreground'>-</span>}
             </div>
           </div>
+        </div>
+
+        <div className='min-w-0'>
+          <div className={cn('mb-1', labelClass)}>{t('Models')}</div>
+          <ChannelModelBadges models={row.original.models ?? ''} />
         </div>
 
         {/* Last row: groups span the full width, showing every group (no label) */}

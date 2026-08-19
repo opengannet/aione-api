@@ -16,13 +16,19 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-// Re-export all library functions
-export * from './channel-actions'
-export * from './advanced-custom'
-export * from './channel-form-errors'
-export * from './channel-form'
-export * from './channel-action-permissions'
-export * from './channel-type-config'
-export * from './channel-utils'
-export * from './multi-key-utils'
-export * from './model-mapping-validation'
+type ChannelActionPermissionInput = {
+  flyte2Managed: boolean
+  canWrite: boolean
+  canSensitiveWrite: boolean
+}
+
+export function getChannelActionPermissions({
+  flyte2Managed,
+  canWrite,
+  canSensitiveWrite,
+}: ChannelActionPermissionInput) {
+  return {
+    canEdit: flyte2Managed ? canWrite : canSensitiveWrite,
+    canMutateDefinition: !flyte2Managed && canSensitiveWrite,
+  }
+}

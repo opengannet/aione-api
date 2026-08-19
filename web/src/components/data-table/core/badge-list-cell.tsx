@@ -51,7 +51,14 @@ export function BadgeListCell({
   return (
     <TooltipProvider>
       <Tooltip>
-        <TooltipTrigger render={<div className='-ml-1.5 max-w-full' />}>
+        <TooltipTrigger
+          render={
+            <div
+              className='-ml-1.5 max-w-full'
+              tabIndex={showTooltip ? 0 : undefined}
+            />
+          }
+        >
           <StatusBadgeList
             items={items}
             max={max}
