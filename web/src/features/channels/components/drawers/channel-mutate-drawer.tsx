@@ -196,7 +196,6 @@ type ChannelMutateDrawerProps = {
   onOpenChange: (open: boolean) => void
   currentRow?: Channel | null
 }
-
 type ModelMappingGuardrail = {
   invalidJson: boolean
   entries: Array<{ source: string; target: string }>
@@ -2307,6 +2306,7 @@ export function ChannelMutateDrawer({
                                     <FormControl>
                                       <Switch
                                         checked={field.value}
+                                        disabled={definitionLocked}
                                         onCheckedChange={field.onChange}
                                       />
                                     </FormControl>
@@ -4144,6 +4144,7 @@ export function ChannelMutateDrawer({
                                       <FormControl>
                                         <Switch
                                           checked={field.value}
+                                          disabled={definitionLocked}
                                           onCheckedChange={field.onChange}
                                         />
                                       </FormControl>
@@ -4170,6 +4171,7 @@ export function ChannelMutateDrawer({
                                     <FormControl>
                                       <Switch
                                         checked={field.value}
+                                        disabled={definitionLocked}
                                         onCheckedChange={field.onChange}
                                       />
                                     </FormControl>
@@ -4195,6 +4197,7 @@ export function ChannelMutateDrawer({
                                     <FormControl>
                                       <Switch
                                         checked={field.value}
+                                        disabled={definitionLocked}
                                         onCheckedChange={field.onChange}
                                       />
                                     </FormControl>
@@ -4220,6 +4223,7 @@ export function ChannelMutateDrawer({
                                     <FormControl>
                                       <Switch
                                         checked={field.value}
+                                        disabled={definitionLocked}
                                         onCheckedChange={field.onChange}
                                       />
                                     </FormControl>
@@ -4295,6 +4299,7 @@ export function ChannelMutateDrawer({
                                   <FormControl>
                                     <Switch
                                       checked={field.value}
+                                      disabled={definitionLocked}
                                       onCheckedChange={field.onChange}
                                     />
                                   </FormControl>
@@ -4344,6 +4349,7 @@ export function ChannelMutateDrawer({
                                       <FormControl>
                                         <Switch
                                           checked={field.value}
+                                          disabled={definitionLocked}
                                           onCheckedChange={field.onChange}
                                         />
                                       </FormControl>
@@ -4371,6 +4377,7 @@ export function ChannelMutateDrawer({
                                           <FormControl>
                                             <Switch
                                               checked={field.value}
+                                              disabled={definitionLocked}
                                               onCheckedChange={field.onChange}
                                             />
                                           </FormControl>
@@ -4398,6 +4405,7 @@ export function ChannelMutateDrawer({
                                           <FormControl>
                                             <Switch
                                               checked={field.value}
+                                              disabled={definitionLocked}
                                               onCheckedChange={field.onChange}
                                             />
                                           </FormControl>
@@ -4425,6 +4433,7 @@ export function ChannelMutateDrawer({
                                           <FormControl>
                                             <Switch
                                               checked={field.value}
+                                              disabled={definitionLocked}
                                               onCheckedChange={field.onChange}
                                             />
                                           </FormControl>
@@ -4452,6 +4461,7 @@ export function ChannelMutateDrawer({
                                           <FormControl>
                                             <Switch
                                               checked={field.value}
+                                              disabled={definitionLocked}
                                               onCheckedChange={field.onChange}
                                             />
                                           </FormControl>
@@ -4483,6 +4493,7 @@ export function ChannelMutateDrawer({
                                           <FormControl>
                                             <Switch
                                               checked={field.value}
+                                              disabled={definitionLocked}
                                               onCheckedChange={field.onChange}
                                             />
                                           </FormControl>
@@ -4508,6 +4519,7 @@ export function ChannelMutateDrawer({
                                           <FormControl>
                                             <Switch
                                               checked={field.value}
+                                              disabled={definitionLocked}
                                               onCheckedChange={field.onChange}
                                             />
                                           </FormControl>
@@ -4535,6 +4547,7 @@ export function ChannelMutateDrawer({
                                           <FormControl>
                                             <Switch
                                               checked={field.value}
+                                              disabled={definitionLocked}
                                               onCheckedChange={field.onChange}
                                             />
                                           </FormControl>
@@ -4589,6 +4602,7 @@ export function ChannelMutateDrawer({
                                       <FormControl>
                                         <Switch
                                           checked={field.value}
+                                          disabled={definitionLocked}
                                           onCheckedChange={field.onChange}
                                         />
                                       </FormControl>
@@ -4614,6 +4628,7 @@ export function ChannelMutateDrawer({
                                         <Switch
                                           checked={field.value}
                                           disabled={
+                                            definitionLocked ||
                                             !upstreamModelUpdateCheckEnabled
                                           }
                                           onCheckedChange={field.onChange}
