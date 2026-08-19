@@ -15,11 +15,57 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 - **Auth**: JWT, WebAuthn/Passkeys, OAuth (GitHub, Discord, OIDC, etc.)
 - **Frontend package manager**: Bun (preferred over npm/yarn/pnpm)
 
+## Development Environment Boundaries
+
+- Keep the main checkout and all Codex-managed Git worktrees on the Windows `D:` drive. The main checkout is `D:\code-work\aione-api`; the Codex managed-worktree root is `D:\codex-worktree-storage`.
+- At the start of every task, resolve the active checkout with `git rev-parse --show-toplevel` and run repository commands from that result. Never leave a task worktree and switch back to the main checkout merely because an example uses the main path.
+- Use Codex, Windows Git, and Windows PowerShell for file editing and Git operations.
+- Run the frontend toolchain from Windows PowerShell against a `D:`-drive checkout. This repository currently uses Bun, React, and Rsbuild; it does not use pnpm or Next.js. Use the package manager and scripts declared by `web/package.json` and `web/bun.lock` unless a separate task explicitly migrates the frontend toolchain.
+- Do not run `bun install`, frontend tests, Rsbuild builds, Playwright, or any command that creates or updates `web/node_modules` from a checkout under `C:\Users\86176\.codex\worktrees`. Reopen the task in a `D:`-drive checkout first.
+- Never share or alternately generate the same `node_modules` directory between Windows and WSL. Do not run Bun, pnpm, npm, or Next.js/Rsbuild commands from WSL against the Windows frontend checkout.
+- Use WSL distribution `Ubuntu-22.04` for Go commands, Bash scripts, and deployment coordination. Convert the current Windows Git root dynamically with `wslpath`; `/mnt/d/code-work/aione-api` is only the main-checkout example.
+- Final production compilation and deployment run on the remote `aione-api` Linux host from committed and pushed source. The existing systemd deployment architecture remains unchanged; do not introduce Docker as the production runtime merely to satisfy the environment boundary.
+
+### Local Verification
+
+Backend verification uses Go in WSL from the active Windows checkout:
+
+```powershell
+$repoRoot = (git rev-parse --show-toplevel).Trim()
+$wslRepoRoot = (wsl.exe -d Ubuntu-22.04 -- bash -lc "wslpath -a '$repoRoot'").Trim()
+
+wsl.exe -d Ubuntu-22.04 -- bash -lc "cd '$wslRepoRoot' && go test ./..."
+```
+
+Frontend installation and verification use Windows PowerShell from a `D:`-drive checkout:
+
+```powershell
+$repoRoot = (git rev-parse --show-toplevel).Trim()
+if ($repoRoot -notmatch '^[dD]:[/\\]') { throw 'Frontend verification requires a D: drive checkout.' }
+Set-Location (Join-Path $repoRoot 'web')
+
+bun install --frozen-lockfile
+bun run typecheck
+bun run lint
+bun run build
+```
+
+Run only the checks proportionate to the change during development, but run the required affected tests and checks before declaring the task complete. A Windows frontend build is local verification, not the final production build.
+
+Before committing:
+
+```powershell
+$repoRoot = (git rev-parse --show-toplevel).Trim()
+Set-Location $repoRoot
+git status --short
+git diff --check
+```
+
 ## Deployment
 
 - **Remote server**: use the SSH target `aione-api` (for example, `ssh aione-api`).
 - **Application directory**: the repository and runtime files are located at `/opt/aione-api` on the remote server.
-- **Deployment workflow**: commit changes locally, push the commit to the Git remote, then connect to `aione-api` and run `git pull --ff-only` in `/opt/aione-api`. Code changes MUST be committed before they are deployed.
+- **Deployment workflow**: commit changes locally, push the commit to the Git remote, then connect to `aione-api` and run `git pull --ff-only` in `/opt/aione-api`. Perform required production compilation on that Linux host from the pulled commit. Code changes MUST be committed before they are deployed.
 - **Forbidden deployment methods**: do NOT use `scp`, tarball uploads, ad hoc file copying, or direct edits of tracked source files on the server.
 - **Service management**: run the production application with `systemctl` using `/etc/systemd/system/new-api.service`, with `/opt/aione-api` as its working directory. Do not run the application with Docker.
 - **Restart after deployment**: after pulling and rebuilding when required, use `sudo systemctl restart new-api` and verify with `sudo systemctl status new-api` and the service health endpoint.
