@@ -1512,6 +1512,7 @@
     "Drawing Logs": "画像生成履歴",
     "Drawing task polling": "描画タスクのポーリング",
     "Drawing task records": "描画タスク記録",
+    "drifted": "公開ステータス異常",
     "Duplicate": "複製",
     "Duplicate group names: {{names}}": "重複するグループ名: {{names}}",
     "Duplicate model in route models": "ルートモデルに重複したモデルがあります",

@@ -1512,6 +1512,7 @@
     "Drawing Logs": "繪圖日誌",
     "Drawing task polling": "繪圖任務輪詢",
     "Drawing task records": "繪圖任務記錄",
+    "drifted": "發布狀態異常",
     "Duplicate": "重複",
     "Duplicate group names: {{names}}": "存在重複的分組名稱：{{names}}",
     "Duplicate model in route models": "路由模型中存在重複模型",

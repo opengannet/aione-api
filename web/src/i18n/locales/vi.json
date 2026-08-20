@@ -1512,6 +1512,7 @@
     "Drawing Logs": "Nhật ký bản vẽ",
     "Drawing task polling": "Thăm dò tác vụ vẽ",
     "Drawing task records": "Lịch sử tác vụ vẽ",
+    "drifted": "Trạng thái phát hành bất thường",
     "Duplicate": "Nhân bản",
     "Duplicate group names: {{names}}": "Tên nhóm bị trùng: {{names}}",
     "Duplicate model in route models": "Mô hình bị lặp trong danh sách mô hình tuyến",
