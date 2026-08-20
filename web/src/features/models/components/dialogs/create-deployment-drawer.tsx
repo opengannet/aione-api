@@ -7,7 +7,7 @@ published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ExternalLink, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -108,14 +108,6 @@ export function CreateDeploymentDrawer({
     settingsResponse?.data?.publication_enabled === true
   const deploymentDomains =
     settingsResponse?.data?.domains ?? DEPLOYMENT_DOMAINS
-  const settingsBaseURL = settingsResponse?.data?.base_url
-    .trim()
-    .replace(/\/$/, '')
-  const settingsProject = settingsResponse?.data?.project.trim()
-  const apiKeysURL =
-    settingsBaseURL && settingsProject
-      ? `${settingsBaseURL}/domain/${values.domain}/project/${encodeURIComponent(settingsProject)}/api-keys`
-      : ''
   useEffect(() => {
     if (open) {
       setPublishAfterCreate(publicationEnabled)
@@ -241,39 +233,25 @@ export function CreateDeploymentDrawer({
           onSubmit={submit}
         >
           <Field label={t('Deployment domain')} className='md:col-span-2'>
-            <div className='flex flex-wrap items-center gap-2'>
-              <Select
-                value={values.domain}
-                onValueChange={(domain) =>
-                  set('domain', domain as DeploymentDomain)
-                }
-              >
-                <SelectTrigger className='min-w-48'>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  <SelectGroup>
-                    {deploymentDomains.map((domain) => (
-                      <SelectItem key={domain} value={domain}>
-                        {t(domainLabel(domain))}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              {apiKeysURL ? (
-                <Button
-                  type='button'
-                  variant='outline'
-                  render={
-                    <a href={apiKeysURL} target='_blank' rel='noreferrer' />
-                  }
-                >
-                  <ExternalLink className='size-4' />
-                  {t('Open Flyte2 API Keys')}
-                </Button>
-              ) : null}
-            </div>
+            <Select
+              value={values.domain}
+              onValueChange={(domain) =>
+                set('domain', domain as DeploymentDomain)
+              }
+            >
+              <SelectTrigger className='min-w-48'>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  {deploymentDomains.map((domain) => (
+                    <SelectItem key={domain} value={domain}>
+                      {t(domainLabel(domain))}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </Field>
           <Field label={t('Name')}>
             <Input
