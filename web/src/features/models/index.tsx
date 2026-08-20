@@ -83,7 +83,8 @@ function ModelsContent() {
     [navigate]
   )
 
-  const meta = SECTION_META[activeSection] ?? SECTION_META.metadata
+  const meta =
+    SECTION_META[activeSection] ?? SECTION_META[MODELS_DEFAULT_SECTION]
   const currentDomain = routeSearch.dDomain ?? 'development'
 
   const handleDeploymentCreated = useCallback(

@@ -23,13 +23,13 @@ import { createSectionRegistry } from '@/features/system-settings/utils/section-
  */
 const MODELS_SECTIONS = [
   {
-    id: 'metadata',
-    titleKey: 'Metadata',
+    id: 'deployments',
+    titleKey: 'Deployments',
     build: () => null, // Content is rendered directly in the page component
   },
   {
-    id: 'deployments',
-    titleKey: 'Deployments',
+    id: 'metadata',
+    titleKey: 'Metadata',
     build: () => null, // Content is rendered directly in the page component
   },
 ] as const
@@ -42,7 +42,7 @@ const modelsRegistry = createSectionRegistry<
   []
 >({
   sections: MODELS_SECTIONS,
-  defaultSection: 'metadata',
+  defaultSection: 'deployments',
   basePath: '/models',
   urlStyle: 'path',
 })

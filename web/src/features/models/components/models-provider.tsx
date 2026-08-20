@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState } from 'react'
 
+import { MODELS_DEFAULT_SECTION } from '../section-registry'
 import type {
   Model,
   ModelTabCategory,
@@ -96,7 +97,9 @@ export function ModelsProvider({ children }: { children: React.ReactNode }) {
     locale: 'zh',
     source: 'official',
   })
-  const [tabCategory, setTabCategory] = useState<ModelTabCategory>('metadata')
+  const [tabCategory, setTabCategory] = useState<ModelTabCategory>(
+    MODELS_DEFAULT_SECTION
+  )
 
   return (
     <ModelsContext.Provider
