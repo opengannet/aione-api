@@ -2,13 +2,13 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -26,27 +26,11 @@ const upstreamModelsResponseLimit = 1 << 20
 const flyteDeploymentStatusActive = 7
 
 type publishDeploymentRequest struct {
-	AccessGroup    string               `json:"access_group"`
-	TokenIDs       []int                `json:"token_ids"`
-	NewToken       *newPublicationToken `json:"new_token"`
-	IdempotencyKey string               `json:"idempotency_key"`
-	UpstreamModel  string               `json:"upstream_model"`
-}
-
-type newPublicationToken struct {
-	UserID             int     `json:"user_id"`
-	Name               string  `json:"name"`
-	ExpiredTime        int64   `json:"expired_time"`
-	RemainQuota        int     `json:"remain_quota"`
-	UnlimitedQuota     bool    `json:"unlimited_quota"`
-	ModelLimitsEnabled bool    `json:"model_limits_enabled"`
-	AllowIPs           *string `json:"allow_ips"`
-	CrossGroupRetry    bool    `json:"cross_group_retry"`
-}
-
-type addPublicationBindingsRequest struct {
-	TokenIDs       []int  `json:"token_ids"`
-	IdempotencyKey string `json:"idempotency_key"`
+	AccessGroup        string          `json:"access_group"`
+	IdempotencyKey     string          `json:"idempotency_key"`
+	UpstreamModel      string          `json:"upstream_model"`
+	DeprecatedTokenIDs json.RawMessage `json:"token_ids"`
+	DeprecatedNewToken json.RawMessage `json:"new_token"`
 }
 
 type updateUpstreamModelRequest struct {
@@ -81,6 +65,10 @@ func PublishDeployment(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if len(request.DeprecatedTokenIDs) > 0 || len(request.DeprecatedNewToken) > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "API keys must be created and managed separately from deployment publication"})
+		return
+	}
 	if len(strings.TrimSpace(request.IdempotencyKey)) == 0 || len(request.IdempotencyKey) > 128 {
 		common.ApiErrorMsg(c, "idempotency_key is required and must not exceed 128 characters")
 		return
@@ -109,43 +97,12 @@ func PublishDeployment(c *gin.Context) {
 		return
 	}
 	phase, reason, endpoint, upstreamModel, verifyError := evaluateFlytePublication(c.Request.Context(), detail, request.UpstreamModel)
-	var newToken *model.Token
-	if request.NewToken != nil {
-		if request.NewToken.UserID <= 0 || strings.TrimSpace(request.NewToken.Name) == "" {
-			common.ApiErrorMsg(c, "new_token.user_id and name are required")
-			return
-		}
-		if len(strings.TrimSpace(request.NewToken.Name)) > 50 {
-			common.ApiErrorMsg(c, "new_token.name must not exceed 50 characters")
-			return
-		}
-		if !request.NewToken.UnlimitedQuota && request.NewToken.RemainQuota < 0 {
-			common.ApiErrorMsg(c, "new_token.remain_quota must not be negative")
-			return
-		}
-		maxQuotaValue := int(1000000000 * common.QuotaPerUnit)
-		if !request.NewToken.UnlimitedQuota && request.NewToken.RemainQuota > maxQuotaValue {
-			common.ApiErrorMsg(c, fmt.Sprintf("new_token.remain_quota must not exceed %d", maxQuotaValue))
-			return
-		}
-		var owner model.User
-		if err := model.DB.First(&owner, request.NewToken.UserID).Error; err != nil {
-			common.ApiErrorMsg(c, "new_token.user_id does not identify an active user")
-			return
-		}
-		key, keyErr := common.GenerateKey()
-		if keyErr != nil {
-			common.ApiError(c, keyErr)
-			return
-		}
-		newToken = &model.Token{UserId: request.NewToken.UserID, Name: strings.TrimSpace(request.NewToken.Name), Key: key, Status: common.TokenStatusEnabled, ExpiredTime: request.NewToken.ExpiredTime, RemainQuota: request.NewToken.RemainQuota, UnlimitedQuota: request.NewToken.UnlimitedQuota, ModelLimitsEnabled: request.NewToken.ModelLimitsEnabled, AllowIps: request.NewToken.AllowIPs, CrossGroupRetry: request.NewToken.CrossGroupRetry}
-	}
-	publication, createdToken, err := model.PublishFlyteDeployment(model.FlytePublicationMutation{
+	publication, err := model.PublishFlyteDeployment(model.FlytePublicationMutation{
 		BaseURL: settings.BaseURL, Organization: contextResult.Org, Project: settings.Project, Domain: domain,
 		AccessGroup: strings.TrimSpace(request.AccessGroup), DeploymentID: deploymentID, ModelCode: modelCode,
 		Endpoint: endpoint, UpstreamModel: upstreamModel, Phase: phase, ReasonCode: reason,
-		LastError: errorText(verifyError), CreatedBy: c.GetInt("id"), TokenIDs: request.TokenIDs,
-		NewToken: newToken, IdempotencyKey: strings.TrimSpace(request.IdempotencyKey),
+		LastError: errorText(verifyError), CreatedBy: c.GetInt("id"), IdempotencyKey: strings.TrimSpace(request.IdempotencyKey),
+		RequestedUpstreamModel: strings.TrimSpace(request.UpstreamModel),
 	})
 	if err != nil {
 		if errors.Is(err, model.ErrFlytePublicationConflict) {
@@ -156,17 +113,10 @@ func PublishDeployment(c *gin.Context) {
 		return
 	}
 	response := publicationResponse(publication)
-	if createdToken != nil {
-		response["created_token"] = gin.H{"id": createdToken.Id, "key": createdToken.GetFullKey(), "name": createdToken.Name}
-	}
-	if hasUnrestrictedBinding(publication) {
-		response["warning"] = "Unrestricted keys in this fixed group can access every published model."
-	}
 	recordManageAudit(c, "deployment.publication.publish", map[string]any{
 		"deployment_id":  deploymentID,
 		"domain":         domain,
 		"publication_id": publication.ID,
-		"binding_count":  len(publication.Bindings),
 	})
 	common.ApiSuccess(c, response)
 }
@@ -186,67 +136,6 @@ func DeleteDeploymentPublication(c *gin.Context) {
 	}
 	recordManageAudit(c, "deployment.publication.delete", map[string]any{"deployment_id": deploymentID, "domain": domain})
 	common.ApiSuccess(c, gin.H{})
-}
-
-func AddDeploymentPublicationBindings(c *gin.Context) {
-	settings := readFlyteDeploymentSettings()
-	if !settings.PublicationEnabled {
-		common.ApiErrorI18n(c, i18n.MsgDeploymentPublicationDisabled)
-		return
-	}
-	var request addPublicationBindingsRequest
-	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	if len(request.TokenIDs) == 0 {
-		common.ApiErrorMsg(c, "token_ids is required")
-		return
-	}
-	_, settings, domain, deploymentID, ok := deploymentRequest(c)
-	if !ok {
-		return
-	}
-	publication, err := model.GetFlytePublication(settings.BaseURL, settings.Project, domain, deploymentID)
-	if err == nil {
-		publication, err = model.AddFlytePublicationBindings(publication.ID, request.TokenIDs, strings.TrimSpace(request.IdempotencyKey))
-	}
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	recordManageAudit(c, "deployment.publication.bind", map[string]any{
-		"deployment_id": deploymentID,
-		"domain":        domain,
-		"token_ids":     request.TokenIDs,
-	})
-	common.ApiSuccess(c, publicationResponse(publication))
-}
-
-func DeleteDeploymentPublicationBinding(c *gin.Context) {
-	tokenID, ok := positivePathInt(c, "token_id")
-	if !ok {
-		return
-	}
-	_, settings, domain, deploymentID, ok := deploymentRequest(c)
-	if !ok {
-		return
-	}
-	publication, err := model.GetFlytePublication(settings.BaseURL, settings.Project, domain, deploymentID)
-	unpublished := false
-	if err == nil {
-		unpublished, err = model.RemoveFlytePublicationBinding(publication.ID, tokenID)
-	}
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	recordManageAudit(c, "deployment.publication.unbind", map[string]any{
-		"deployment_id": deploymentID,
-		"domain":        domain,
-		"token_id":      tokenID,
-	})
-	common.ApiSuccess(c, gin.H{"unpublished": unpublished})
 }
 
 func UpdateDeploymentPublicationUpstreamModel(c *gin.Context) {
@@ -422,15 +311,6 @@ func sameOrigin(left, right *url.URL) bool {
 	return strings.EqualFold(left.Scheme, right.Scheme) && strings.EqualFold(left.Host, right.Host)
 }
 
-func positivePathInt(c *gin.Context, key string) (int, bool) {
-	value, err := strconv.Atoi(strings.TrimSpace(c.Param(key)))
-	if err != nil || value <= 0 {
-		common.ApiErrorMsg(c, key+" must be a positive integer")
-		return 0, false
-	}
-	return value, true
-}
-
 func reconcileAllFlytePublications(ctx context.Context, force bool) (int, int, error) {
 	settings := readFlyteDeploymentSettings()
 	if settings.BaseURL == "" || settings.Project == "" || settings.APIKey == "" {
@@ -558,20 +438,7 @@ func reconcileAllFlytePublications(ctx context.Context, force bool) (int, int, e
 }
 
 func publicationResponse(publication *model.FlytePublicationView) gin.H {
-	response := gin.H{"id": publication.ID, "deployment_id": publication.DeploymentID, "model_code": publication.ModelCode, "endpoint": publication.Endpoint, "upstream_model": publication.UpstreamModel, "phase": publication.Phase, "reason_code": publication.ReasonCode, "last_error": publication.LastError, "access_group": publication.Gateway.AccessGroup, "organization": publication.Gateway.Organization, "project": publication.Gateway.Project, "domain": publication.Gateway.Domain, "channel_id": publication.Gateway.ChannelID, "bindings": publication.Bindings, "pricing_configured": relayhelper.HasModelBillingConfig(publication.ModelCode)}
-	if hasUnrestrictedBinding(publication) {
-		response["warning"] = "Unrestricted keys in this fixed group can access every published model."
-	}
-	return response
-}
-
-func hasUnrestrictedBinding(publication *model.FlytePublicationView) bool {
-	for _, binding := range publication.Bindings {
-		if !binding.Restricted {
-			return true
-		}
-	}
-	return false
+	return gin.H{"id": publication.ID, "deployment_id": publication.DeploymentID, "model_code": publication.ModelCode, "endpoint": publication.Endpoint, "upstream_model": publication.UpstreamModel, "phase": publication.Phase, "reason_code": publication.ReasonCode, "last_error": publication.LastError, "access_group": publication.Gateway.AccessGroup, "organization": publication.Gateway.Organization, "project": publication.Gateway.Project, "domain": publication.Gateway.Domain, "channel_id": publication.Gateway.ChannelID, "pricing_configured": relayhelper.HasModelBillingConfig(publication.ModelCode)}
 }
 func errorText(err error) string {
 	if err == nil {

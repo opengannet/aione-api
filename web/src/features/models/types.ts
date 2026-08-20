@@ -336,14 +336,6 @@ export interface Deployment {
   publication?: FlytePublication
 }
 
-export interface FlytePublicationBinding {
-  token_id: number
-  token_name: string
-  token_key: string
-  managed_permission_added: boolean
-  restricted: boolean
-}
-
 export interface FlytePublication {
   id: number
   deployment_id: string
@@ -359,8 +351,6 @@ export interface FlytePublication {
   domain: DeploymentDomain
   channel_id: number
   pricing_configured: boolean
-  bindings: FlytePublicationBinding[]
-  warning?: string
 }
 
 export type DeploymentPricingMode =
@@ -386,17 +376,6 @@ export interface UpdateDeploymentPricing {
   input_price?: number
   output_price?: number
   request_price?: number
-}
-
-export interface NewPublicationToken {
-  user_id: number
-  name: string
-  expired_time: number
-  remain_quota: number
-  unlimited_quota: boolean
-  model_limits_enabled: boolean
-  allow_ips: string
-  cross_group_retry: boolean
 }
 
 export interface DeploymentResourceDefinition {

@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -341,98 +340,6 @@ func AddToken(c *gin.Context) {
 	})
 }
 
-type flytePublicationTokenRequest struct {
-	ModelCode      string `json:"model_code"`
-	Name           string `json:"name"`
-	IdempotencyKey string `json:"idempotency_key"`
-}
-
-func AddFlytePublicationToken(c *gin.Context) {
-	if !c.GetBool("use_access_token") {
-		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "management PAT is required"})
-		return
-	}
-
-	var request flytePublicationTokenRequest
-	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "request body must be valid JSON"})
-		return
-	}
-	modelCode, err := model.ValidateFlyteModelCode(request.ModelCode)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
-		return
-	}
-	name := strings.TrimSpace(request.Name)
-	if name == "" || len(name) > 50 {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "name must contain 1 to 50 bytes"})
-		return
-	}
-	idempotencyKey := strings.TrimSpace(request.IdempotencyKey)
-	if idempotencyKey == "" || len(idempotencyKey) > 128 {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "idempotency_key must contain 1 to 128 bytes"})
-		return
-	}
-
-	publication, err := model.GetFlytePublicationByModelCode(modelCode)
-	if err != nil {
-		if errors.Is(err, model.ErrFlytePublicationNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "model publication not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "failed to read model publication"})
-		return
-	}
-	if publication.Phase == model.FlytePublicationPhaseCleanup {
-		c.JSON(http.StatusConflict, gin.H{"success": false, "message": "model publication cleanup is pending"})
-		return
-	}
-	if publication.Phase != model.FlytePublicationPhasePending && publication.Phase != model.FlytePublicationPhasePublished && publication.Phase != model.FlytePublicationPhaseDrifted {
-		c.JSON(http.StatusConflict, gin.H{"success": false, "message": "model publication cannot issue API keys"})
-		return
-	}
-	if !service.GroupInUserUsableGroups(c.GetString("user_group"), publication.Gateway.AccessGroup) {
-		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "API key owner cannot use the publication access group"})
-		return
-	}
-
-	token, created, err := model.CreateFlytePublicationToken(model.FlytePublicationTokenMutation{
-		ModelCode:           modelCode,
-		Name:                name,
-		IdempotencyKey:      idempotencyKey,
-		UserID:              c.GetInt("id"),
-		ExpectedAccessGroup: publication.Gateway.AccessGroup,
-	})
-	if err != nil {
-		switch {
-		case errors.Is(err, model.ErrFlytePublicationNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "model publication not found"})
-		case errors.Is(err, model.ErrFlytePublicationNotIssuable):
-			c.JSON(http.StatusConflict, gin.H{"success": false, "message": err.Error()})
-		case errors.Is(err, model.ErrFlytePublicationConflict), errors.Is(err, model.ErrFlytePublicationTokenLimit):
-			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": err.Error()})
-		default:
-			common.SysLog("failed to create Flyte publication API key: " + err.Error())
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "failed to create model API key"})
-		}
-		return
-	}
-	if created {
-		recordUserSecurityAudit(c, token.UserId, "token.flyte_publication.create", map[string]interface{}{
-			"token_id":   token.Id,
-			"model_code": modelCode,
-			"name":       token.Name,
-		})
-	}
-	common.ApiSuccess(c, gin.H{
-		"id":         token.Id,
-		"key":        token.GetFullKey(),
-		"name":       token.Name,
-		"model_code": modelCode,
-		"created":    created,
-	})
-}
-
 func DeleteToken(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userId := c.GetInt("id")
@@ -490,10 +397,6 @@ func UpdateToken(c *gin.Context) {
 	if statusOnly != "" {
 		cleanToken.Status = token.Status
 	} else {
-		if err := model.ValidateFlyteBoundTokenUpdate(cleanToken.Id, token.Group, token.ModelLimitsEnabled, token.ModelLimits); err != nil {
-			common.ApiError(c, err)
-			return
-		}
 		// If you add more fields, please also update token.Update()
 		cleanToken.Name = token.Name
 		cleanToken.ExpiredTime = token.ExpiredTime

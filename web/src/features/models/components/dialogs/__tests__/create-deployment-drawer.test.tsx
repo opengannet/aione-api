@@ -59,5 +59,10 @@ describe('CreateDeploymentDrawer', () => {
     expect(
       screen.queryByRole('link', { name: 'Open Flyte2 API Keys' })
     ).not.toBeInTheDocument()
+    expect(screen.getByText('Fixed access group')).toBeVisible()
+    expect(screen.queryByText('API key IDs')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Create and bind a new API key')
+    ).not.toBeInTheDocument()
   })
 })

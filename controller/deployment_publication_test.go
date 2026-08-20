@@ -11,9 +11,27 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/flyte2"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestPublishDeploymentRejectsLegacyAPIKeyFields(t *testing.T) {
+	setupDeploymentControllerTest(t, flyteDeploymentSettings{PublicationEnabled: true})
+	for _, body := range []string{
+		`{"access_group":"aione","idempotency_key":"publish-1","token_ids":[]}`,
+		`{"access_group":"aione","idempotency_key":"publish-2","new_token":null}`,
+	} {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodPost, "/api/deployments/model/publication", strings.NewReader(body))
+
+		PublishDeployment(ctx)
+
+		assert.Equal(t, http.StatusBadRequest, recorder.Code)
+		assert.Contains(t, recorder.Body.String(), "API keys must be created and managed separately")
+	}
+}
 
 func TestReconcileAllFlytePublicationsIsolatesDeploymentDomains(t *testing.T) {
 	listPages := map[string][]string{}
@@ -47,8 +65,6 @@ func TestReconcileAllFlytePublicationsIsolatesDeploymentDomains(t *testing.T) {
 	previousCache := common.MemoryCacheEnabled
 	common.MemoryCacheEnabled = true
 	t.Cleanup(func() { common.MemoryCacheEnabled = previousCache })
-	token := model.Token{UserId: 1, Key: "reconcile-token", Name: "reconcile", Group: "aione", ModelLimitsEnabled: true}
-	require.NoError(t, model.DB.Create(&token).Error)
 	for _, publication := range []struct {
 		domain    string
 		modelCode string
@@ -57,10 +73,10 @@ func TestReconcileAllFlytePublicationsIsolatesDeploymentDomains(t *testing.T) {
 		{domain: "production", modelCode: "production-model"},
 		{domain: "staging", modelCode: "staging-model"},
 	} {
-		_, _, err := model.PublishFlyteDeployment(model.FlytePublicationMutation{
+		_, err := model.PublishFlyteDeployment(model.FlytePublicationMutation{
 			BaseURL: server.URL + "/v2", Organization: "org", Project: "aione", Domain: publication.domain,
 			AccessGroup: "aione", DeploymentID: "shared-id", ModelCode: publication.modelCode,
-			Phase: model.FlytePublicationPhasePending, TokenIDs: []int{token.Id}, IdempotencyKey: publication.domain,
+			Phase: model.FlytePublicationPhasePending, IdempotencyKey: publication.domain,
 		})
 		require.NoError(t, err)
 	}

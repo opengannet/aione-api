@@ -489,10 +489,8 @@ export async function publishDeployment(
   id: string | number,
   data: {
     access_group: string
-    token_ids: number[]
     idempotency_key: string
     upstream_model?: string
-    new_token?: import('./types').NewPublicationToken
   }
 ) {
   try {
@@ -502,9 +500,7 @@ export async function publishDeployment(
     return res.data as {
       success: boolean
       message?: string
-      data?: import('./types').FlytePublication & {
-        created_token?: { id: number; key: string; name: string }
-      }
+      data?: import('./types').FlytePublication
     }
   } catch (error: unknown) {
     if (axios.isAxiosError(error) && error.response?.data) {
@@ -521,34 +517,6 @@ export async function unpublishDeployment(
   const res = await api.delete(`/api/deployments/${id}/publication`, {
     params: { domain },
   })
-  return res.data as { success: boolean; message?: string }
-}
-
-export async function addDeploymentPublicationBindings(
-  domain: import('./types').DeploymentDomain,
-  id: string | number,
-  tokenIds: number[]
-) {
-  const res = await api.post(
-    `/api/deployments/${id}/publication/bindings`,
-    {
-      token_ids: tokenIds,
-      idempotency_key: crypto.randomUUID(),
-    },
-    { params: { domain } }
-  )
-  return res.data as { success: boolean; message?: string }
-}
-
-export async function removeDeploymentPublicationBinding(
-  domain: import('./types').DeploymentDomain,
-  id: string | number,
-  tokenId: number
-) {
-  const res = await api.delete(
-    `/api/deployments/${id}/publication/bindings/${tokenId}`,
-    { params: { domain } }
-  )
   return res.data as { success: boolean; message?: string }
 }
 

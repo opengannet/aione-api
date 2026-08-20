@@ -197,7 +197,7 @@ export function useDeploymentsColumns(opts: {
                 </DropdownMenuShortcut>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => opts.onPublication(deployment)}>
-                {t('Publication and API keys')}
+                {t('Publication')}
                 <DropdownMenuShortcut>
                   <KeyRound size={16} />
                 </DropdownMenuShortcut>

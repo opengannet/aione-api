@@ -374,9 +374,6 @@ func DeleteTokenById(id int, userId int) (err error) {
 		if cacheErr := invalidateTokenCacheForMutation(token.Key); cacheErr != nil {
 			common.SysLog("failed to invalidate token cache before delete: " + cacheErr.Error())
 		}
-		if err := UnbindFlyteTokensWithTx(tx, []int{id}); err != nil {
-			return err
-		}
 		return tx.Delete(&token).Error
 	})
 	if err == nil {
@@ -462,14 +459,6 @@ func BatchDeleteTokens(ids []int, userId int) (int, error) {
 
 	var tokens []Token
 	if err := lockForUpdate(tx).Where("user_id = ? AND id IN (?)", userId, ids).Find(&tokens).Error; err != nil {
-		tx.Rollback()
-		return 0, err
-	}
-	actualIDs := make([]int, 0, len(tokens))
-	for _, token := range tokens {
-		actualIDs = append(actualIDs, token.Id)
-	}
-	if err := UnbindFlyteTokensWithTx(tx, actualIDs); err != nil {
 		tx.Rollback()
 		return 0, err
 	}

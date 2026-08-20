@@ -968,17 +968,6 @@ func deleteUserAuthenticationData(tx *gorm.DB, userId int) error {
 	if err := releaseAllExternalIdentitiesWithTx(tx, userId); err != nil {
 		return err
 	}
-	var flyteTokens []Token
-	if err := lockForUpdate(tx).Unscoped().Select("id").Where("user_id = ?", userId).Find(&flyteTokens).Error; err != nil {
-		return err
-	}
-	tokenIDs := make([]int, 0, len(flyteTokens))
-	for _, token := range flyteTokens {
-		tokenIDs = append(tokenIDs, token.Id)
-	}
-	if err := UnbindFlyteTokensWithTx(tx, tokenIDs); err != nil {
-		return err
-	}
 	for _, authenticationData := range []any{
 		&TwoFABackupCode{},
 		&TwoFA{},

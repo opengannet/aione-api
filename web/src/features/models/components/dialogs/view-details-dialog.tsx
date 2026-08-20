@@ -102,12 +102,6 @@ export function ViewDetailsDialog({
                     detail.publication.upstream_model || '-',
                   ],
                   [
-                    t('Bound API keys'),
-                    detail.publication.bindings
-                      .map((binding) => binding.token_name)
-                      .join(', ') || '-',
-                  ],
-                  [
                     t('Pricing'),
                     detail.publication.pricing_configured
                       ? t('Configured')

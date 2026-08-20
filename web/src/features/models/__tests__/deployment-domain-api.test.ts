@@ -136,7 +136,6 @@ describe('deployment domain API scope', () => {
     await getDeploymentPublication('production', 42)
     await publishDeployment('production', 42, {
       access_group: 'default',
-      token_ids: [7],
       idempotency_key: 'publish-42',
     })
     await reconcileDeploymentPublication('production', 42)
@@ -155,7 +154,10 @@ describe('deployment domain API scope', () => {
     expect(apiMocks.post).toHaveBeenNthCalledWith(
       1,
       '/api/deployments/42/publication',
-      expect.any(Object),
+      {
+        access_group: 'default',
+        idempotency_key: 'publish-42',
+      },
       { params: { domain: 'production' } }
     )
     expect(apiMocks.post).toHaveBeenNthCalledWith(

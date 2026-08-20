@@ -11,16 +11,13 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"gorm.io/gorm"
 )
 
 var (
-	ErrFlytePublicationConflict    = errors.New("Flyte publication conflict")
-	ErrFlytePublicationNotFound    = errors.New("Flyte publication not found")
-	ErrFlytePublicationNotIssuable = errors.New("Flyte publication cannot issue API keys")
-	ErrFlytePublicationTokenLimit  = errors.New("Flyte publication API key owner reached the token limit")
-	flytePublicationMutationLock   sync.Mutex
+	ErrFlytePublicationConflict  = errors.New("Flyte publication conflict")
+	ErrFlytePublicationNotFound  = errors.New("Flyte publication not found")
+	flytePublicationMutationLock sync.Mutex
 )
 
 const (
@@ -45,22 +42,24 @@ type FlyteGateway struct {
 }
 
 type FlytePublication struct {
-	ID                 int64  `json:"id" gorm:"primaryKey"`
-	GatewayID          int64  `json:"gateway_id" gorm:"index;uniqueIndex:idx_flyte_gateway_deployment"`
-	DeploymentID       string `json:"deployment_id" gorm:"type:varchar(255);uniqueIndex:idx_flyte_gateway_deployment"`
-	ModelCode          string `json:"model_code" gorm:"type:varchar(255);not null"`
-	ModelCodeKey       string `json:"-" gorm:"type:char(64);uniqueIndex"`
-	Endpoint           string `json:"endpoint" gorm:"type:text"`
-	UpstreamModel      string `json:"upstream_model" gorm:"type:varchar(255)"`
-	Phase              string `json:"phase" gorm:"type:varchar(32);index"`
-	ReasonCode         string `json:"reason_code" gorm:"type:varchar(64)"`
-	NextRetryAt        int64  `json:"next_retry_at" gorm:"bigint;index"`
-	ConsecutiveMissing int    `json:"consecutive_missing"`
-	MissingSince       int64  `json:"missing_since" gorm:"bigint"`
-	LastSeenAt         int64  `json:"last_seen_at" gorm:"bigint"`
-	LastError          string `json:"last_error" gorm:"type:text"`
-	CreatedAt          int64  `json:"created_at" gorm:"bigint"`
-	UpdatedAt          int64  `json:"updated_at" gorm:"bigint"`
+	ID                 int64   `json:"id" gorm:"primaryKey"`
+	GatewayID          int64   `json:"gateway_id" gorm:"index;uniqueIndex:idx_flyte_gateway_deployment"`
+	DeploymentID       string  `json:"deployment_id" gorm:"type:varchar(255);uniqueIndex:idx_flyte_gateway_deployment"`
+	ModelCode          string  `json:"model_code" gorm:"type:varchar(255);not null"`
+	ModelCodeKey       string  `json:"-" gorm:"type:char(64);uniqueIndex"`
+	Endpoint           string  `json:"endpoint" gorm:"type:text"`
+	UpstreamModel      string  `json:"upstream_model" gorm:"type:varchar(255)"`
+	Phase              string  `json:"phase" gorm:"type:varchar(32);index"`
+	ReasonCode         string  `json:"reason_code" gorm:"type:varchar(64)"`
+	NextRetryAt        int64   `json:"next_retry_at" gorm:"bigint;index"`
+	ConsecutiveMissing int     `json:"consecutive_missing"`
+	MissingSince       int64   `json:"missing_since" gorm:"bigint"`
+	LastSeenAt         int64   `json:"last_seen_at" gorm:"bigint"`
+	LastError          string  `json:"last_error" gorm:"type:text"`
+	IdempotencyKey     *string `json:"-" gorm:"type:varchar(128);uniqueIndex"`
+	IdempotencyHash    string  `json:"-" gorm:"type:char(64)"`
+	CreatedAt          int64   `json:"created_at" gorm:"bigint"`
+	UpdatedAt          int64   `json:"updated_at" gorm:"bigint"`
 }
 
 type FlytePublicationBinding struct {
@@ -74,43 +73,25 @@ type FlytePublicationBinding struct {
 
 type FlytePublicationView struct {
 	FlytePublication
-	Gateway  FlyteGateway                  `json:"gateway" gorm:"-"`
-	Bindings []FlytePublicationBindingView `json:"bindings" gorm:"-"`
-}
-
-type FlytePublicationBindingView struct {
-	TokenID                int    `json:"token_id"`
-	TokenName              string `json:"token_name"`
-	TokenKey               string `json:"token_key"`
-	ManagedPermissionAdded bool   `json:"managed_permission_added"`
-	Restricted             bool   `json:"restricted"`
+	Gateway FlyteGateway `json:"gateway" gorm:"-"`
 }
 
 type FlytePublicationMutation struct {
-	BaseURL        string
-	Organization   string
-	Project        string
-	Domain         string
-	AccessGroup    string
-	DeploymentID   string
-	ModelCode      string
-	Endpoint       string
-	UpstreamModel  string
-	Phase          string
-	ReasonCode     string
-	LastError      string
-	CreatedBy      int
-	TokenIDs       []int
-	NewToken       *Token
-	IdempotencyKey string
-}
-
-type FlytePublicationTokenMutation struct {
-	ModelCode           string
-	Name                string
-	IdempotencyKey      string
-	UserID              int
-	ExpectedAccessGroup string
+	BaseURL                string
+	Organization           string
+	Project                string
+	Domain                 string
+	AccessGroup            string
+	DeploymentID           string
+	ModelCode              string
+	Endpoint               string
+	UpstreamModel          string
+	Phase                  string
+	ReasonCode             string
+	LastError              string
+	CreatedBy              int
+	IdempotencyKey         string
+	RequestedUpstreamModel string
 }
 
 func FlyteScopeKey(baseURL, organization, project, domain string) string {
@@ -242,7 +223,6 @@ func UpdateFlytePublicationRoute(publicationID int64, phase, reasonCode, endpoin
 
 func MarkFlytePublicationMissing(publicationID int64) (bool, error) {
 	unpublished := false
-	affectedTokenIDs := []int{}
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var publication FlytePublication
 		if err := lockForUpdate(tx).First(&publication, publicationID).Error; err != nil {
@@ -255,16 +235,6 @@ func MarkFlytePublicationMissing(publicationID int64) (bool, error) {
 		}
 		missingCount := publication.ConsecutiveMissing + 1
 		if missingCount >= 3 && now-missingSince >= 120 {
-			var bindings []FlytePublicationBinding
-			if err := tx.Where("publication_id = ?", publication.ID).Find(&bindings).Error; err != nil {
-				return err
-			}
-			for _, binding := range bindings {
-				affectedTokenIDs = append(affectedTokenIDs, binding.TokenID)
-				if err := unbindFlyteToken(tx, publication, binding.TokenID); err != nil {
-					return err
-				}
-			}
 			if err := tx.Delete(&publication).Error; err != nil {
 				return err
 			}
@@ -275,7 +245,6 @@ func MarkFlytePublicationMissing(publicationID int64) (bool, error) {
 	})
 	if err == nil && unpublished {
 		InitChannelCache()
-		invalidateFlytePublicationTokenCaches(affectedTokenIDs)
 	}
 	return unpublished, err
 }
@@ -293,86 +262,77 @@ func loadFlytePublicationView(db *gorm.DB, publication FlytePublication) (*Flyte
 	if err := db.First(&view.Gateway, publication.GatewayID).Error; err != nil {
 		return nil, err
 	}
-	var rows []struct {
-		FlytePublicationBinding
-		Name               string
-		Key                string
-		ModelLimitsEnabled bool
-	}
-	err := db.Table("flyte_publication_bindings").
-		Select("flyte_publication_bindings.*, tokens.name, tokens.key, tokens.model_limits_enabled").
-		Joins("JOIN tokens ON tokens.id = flyte_publication_bindings.token_id AND tokens.deleted_at IS NULL").
-		Where("flyte_publication_bindings.publication_id = ?", publication.ID).
-		Order("flyte_publication_bindings.id").Scan(&rows).Error
-	if err != nil {
-		return nil, err
-	}
-	for _, row := range rows {
-		view.Bindings = append(view.Bindings, FlytePublicationBindingView{
-			TokenID: row.TokenID, TokenName: row.Name, TokenKey: MaskTokenKey(row.Key),
-			ManagedPermissionAdded: row.ManagedPermissionAdded, Restricted: row.ModelLimitsEnabled,
-		})
-	}
 	return view, nil
 }
 
-func PublishFlyteDeployment(mutation FlytePublicationMutation) (*FlytePublicationView, *Token, error) {
+func PublishFlyteDeployment(mutation FlytePublicationMutation) (*FlytePublicationView, error) {
 	flytePublicationMutationLock.Lock()
 	defer flytePublicationMutationLock.Unlock()
 
 	modelCode, err := ValidateFlyteModelCode(mutation.ModelCode)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	if strings.TrimSpace(mutation.AccessGroup) == "" || strings.EqualFold(strings.TrimSpace(mutation.AccessGroup), "auto") {
-		return nil, nil, fmt.Errorf("a fixed access group is required")
+	accessGroup := strings.TrimSpace(mutation.AccessGroup)
+	if accessGroup == "" || strings.EqualFold(accessGroup, "auto") {
+		return nil, fmt.Errorf("a fixed access group is required")
 	}
-	if len(mutation.TokenIDs) == 0 && mutation.NewToken == nil {
-		return nil, nil, fmt.Errorf("at least one existing or new API key is required")
+	idempotencyKey := strings.TrimSpace(mutation.IdempotencyKey)
+	if idempotencyKey == "" || len(idempotencyKey) > 128 {
+		return nil, fmt.Errorf("idempotency key must contain 1 to 128 bytes")
 	}
 	mutation.ModelCode = modelCode
+	baseURL := strings.TrimRight(strings.TrimSpace(mutation.BaseURL), "/")
+	organization := strings.TrimSpace(mutation.Organization)
+	project := strings.TrimSpace(mutation.Project)
+	domain := strings.TrimSpace(mutation.Domain)
+	deploymentID := strings.TrimSpace(mutation.DeploymentID)
+	requestedUpstreamModel := strings.TrimSpace(mutation.RequestedUpstreamModel)
+	idempotencyHash := sha256Hex(strings.Join([]string{baseURL, organization, project, domain, accessGroup, deploymentID, modelCode, requestedUpstreamModel}, "\x00"))
 	now := common.GetTimestamp()
 	var publication FlytePublication
-	var createdToken *Token
-	affectedTokenIDs := []int{}
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		if mutation.IdempotencyKey != "" {
-			var existing FlytePublicationBinding
-			if err := tx.Where("idempotency_key = ?", mutation.IdempotencyKey).First(&existing).Error; err == nil {
-				return tx.First(&publication, existing.PublicationID).Error
-			} else if err != nil && err != gorm.ErrRecordNotFound {
+		if err := tx.Where("idempotency_key = ?", idempotencyKey).First(&publication).Error; err == nil {
+			var existingGateway FlyteGateway
+			if err := tx.First(&existingGateway, publication.GatewayID).Error; err != nil {
 				return err
 			}
+			if publication.IdempotencyHash != idempotencyHash || existingGateway.BaseURL != baseURL || existingGateway.Organization != organization || existingGateway.Project != project || existingGateway.Domain != domain || existingGateway.AccessGroup != accessGroup || publication.DeploymentID != deploymentID || publication.ModelCode != modelCode {
+				return fmt.Errorf("%w: idempotency key was already used for a different publication", ErrFlytePublicationConflict)
+			}
+			return nil
+		} else if err != nil && err != gorm.ErrRecordNotFound {
+			return err
 		}
+
 		var lockedScope FlyteGateway
-		baseURL := strings.TrimRight(strings.TrimSpace(mutation.BaseURL), "/")
-		if scopeErr := lockForUpdate(tx).Where("base_url = ? AND project = ? AND domain = ?", baseURL, strings.TrimSpace(mutation.Project), strings.TrimSpace(mutation.Domain)).First(&lockedScope).Error; scopeErr == nil && lockedScope.Organization != strings.TrimSpace(mutation.Organization) {
-			return fmt.Errorf("Flyte2 organization changed from %s to %s; publication is frozen", lockedScope.Organization, strings.TrimSpace(mutation.Organization))
+		if scopeErr := lockForUpdate(tx).Where("base_url = ? AND project = ? AND domain = ?", baseURL, project, domain).First(&lockedScope).Error; scopeErr == nil && lockedScope.Organization != organization {
+			return fmt.Errorf("Flyte2 organization changed from %s to %s; publication is frozen", lockedScope.Organization, organization)
 		} else if scopeErr != nil && scopeErr != gorm.ErrRecordNotFound {
 			return scopeErr
 		}
-		scopeKey := FlyteScopeKey(mutation.BaseURL, mutation.Organization, mutation.Project, mutation.Domain)
+		scopeKey := FlyteScopeKey(baseURL, organization, project, domain)
 		var gateway FlyteGateway
 		err := lockForUpdate(tx).Where("scope_key = ?", scopeKey).First(&gateway).Error
 		if err == gorm.ErrRecordNotFound {
-			channel, createErr := createFlyteManagedChannel(tx, mutation.AccessGroup)
+			channel, createErr := createFlyteManagedChannel(tx, accessGroup)
 			if createErr != nil {
 				return createErr
 			}
-			gateway = FlyteGateway{ScopeKey: scopeKey, BaseURL: baseURL, Organization: strings.TrimSpace(mutation.Organization), Project: strings.TrimSpace(mutation.Project), Domain: strings.TrimSpace(mutation.Domain), AccessGroup: strings.TrimSpace(mutation.AccessGroup), ChannelID: channel.Id, CreatedBy: mutation.CreatedBy, CreatedAt: now, UpdatedAt: now}
+			gateway = FlyteGateway{ScopeKey: scopeKey, BaseURL: baseURL, Organization: organization, Project: project, Domain: domain, AccessGroup: accessGroup, ChannelID: channel.Id, CreatedBy: mutation.CreatedBy, CreatedAt: now, UpdatedAt: now}
 			if err := tx.Create(&gateway).Error; err != nil {
 				return err
 			}
 		} else if err != nil {
 			return err
-		} else if gateway.AccessGroup != strings.TrimSpace(mutation.AccessGroup) {
+		} else if gateway.AccessGroup != accessGroup {
 			return fmt.Errorf("Flyte gateway is fixed to access group %s", gateway.AccessGroup)
 		}
 		if conflictID, conflict := enabledChannelConflictWithTx(tx, gateway.ChannelID, gateway.AccessGroup, modelCode); conflict {
 			return fmt.Errorf("%w: enabled channel %d already serves model %s in group %s; disable it before publishing", ErrFlytePublicationConflict, conflictID, modelCode, gateway.AccessGroup)
 		}
 		var duplicateCount int64
-		if err := tx.Model(&FlytePublication{}).Where("model_code_key = ? OR (gateway_id = ? AND deployment_id = ?)", FlyteModelCodeKey(modelCode), gateway.ID, strings.TrimSpace(mutation.DeploymentID)).Count(&duplicateCount).Error; err != nil {
+		if err := tx.Model(&FlytePublication{}).Where("model_code_key = ? OR (gateway_id = ? AND deployment_id = ?)", FlyteModelCodeKey(modelCode), gateway.ID, deploymentID).Count(&duplicateCount).Error; err != nil {
 			return err
 		}
 		if duplicateCount > 0 {
@@ -383,146 +343,17 @@ func PublishFlyteDeployment(mutation FlytePublicationMutation) (*FlytePublicatio
 		if mutation.Phase == FlytePublicationPhasePending {
 			nextRetryAt = now + 15
 		}
-		publication = FlytePublication{GatewayID: gateway.ID, DeploymentID: strings.TrimSpace(mutation.DeploymentID), ModelCode: modelCode, ModelCodeKey: FlyteModelCodeKey(modelCode), Endpoint: mutation.Endpoint, UpstreamModel: mutation.UpstreamModel, Phase: mutation.Phase, ReasonCode: mutation.ReasonCode, LastError: mutation.LastError, LastSeenAt: now, NextRetryAt: nextRetryAt, CreatedAt: now, UpdatedAt: now}
+		publication = FlytePublication{GatewayID: gateway.ID, DeploymentID: deploymentID, ModelCode: modelCode, ModelCodeKey: FlyteModelCodeKey(modelCode), Endpoint: mutation.Endpoint, UpstreamModel: mutation.UpstreamModel, Phase: mutation.Phase, ReasonCode: mutation.ReasonCode, LastError: mutation.LastError, LastSeenAt: now, NextRetryAt: nextRetryAt, IdempotencyKey: &idempotencyKey, IdempotencyHash: idempotencyHash, CreatedAt: now, UpdatedAt: now}
 		if err := tx.Create(&publication).Error; err != nil {
 			return err
-		}
-		tokenIDs := append([]int(nil), mutation.TokenIDs...)
-		if mutation.NewToken != nil {
-			newToken := *mutation.NewToken
-			newToken.Group = gateway.AccessGroup
-			newToken.CreatedTime, newToken.AccessedTime = now, now
-			if err := tx.Create(&newToken).Error; err != nil {
-				return err
-			}
-			createdToken = &newToken
-			tokenIDs = append(tokenIDs, newToken.Id)
-		}
-		seen := map[int]struct{}{}
-		for _, tokenID := range tokenIDs {
-			if _, ok := seen[tokenID]; ok {
-				continue
-			}
-			seen[tokenID] = struct{}{}
-			affectedTokenIDs = append(affectedTokenIDs, tokenID)
-			if err := bindFlyteToken(tx, publication, gateway, tokenID, mutation.IdempotencyKey, now); err != nil {
-				return err
-			}
 		}
 		return rebuildFlyteManagedChannel(tx, gateway.ID)
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	InitChannelCache()
-	invalidateFlytePublicationTokenCaches(affectedTokenIDs)
-	view, err := loadFlytePublicationView(DB, publication)
-	return view, createdToken, err
-}
-
-func CreateFlytePublicationToken(mutation FlytePublicationTokenMutation) (*Token, bool, error) {
-	flytePublicationMutationLock.Lock()
-	defer flytePublicationMutationLock.Unlock()
-
-	modelCode, err := ValidateFlyteModelCode(mutation.ModelCode)
-	if err != nil {
-		return nil, false, err
-	}
-	name := strings.TrimSpace(mutation.Name)
-	if name == "" || len(name) > 50 {
-		return nil, false, fmt.Errorf("API key name must contain 1 to 50 bytes")
-	}
-	idempotencyKey := strings.TrimSpace(mutation.IdempotencyKey)
-	if idempotencyKey == "" || len(idempotencyKey) > 128 {
-		return nil, false, fmt.Errorf("idempotency key must contain 1 to 128 bytes")
-	}
-	if mutation.UserID <= 0 {
-		return nil, false, fmt.Errorf("API key owner user ID must be positive")
-	}
-	expectedAccessGroup := strings.TrimSpace(mutation.ExpectedAccessGroup)
-	if expectedAccessGroup == "" {
-		return nil, false, fmt.Errorf("expected access group is required")
-	}
-
-	var token Token
-	created := false
-	err = DB.Transaction(func(tx *gorm.DB) error {
-		var publication FlytePublication
-		if err := lockForUpdate(tx).Where("model_code_key = ?", FlyteModelCodeKey(modelCode)).First(&publication).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrFlytePublicationNotFound
-			}
-			return err
-		}
-		switch publication.Phase {
-		case FlytePublicationPhasePending, FlytePublicationPhasePublished, FlytePublicationPhaseDrifted:
-		case FlytePublicationPhaseCleanup:
-			return fmt.Errorf("%w: publication cleanup is pending", ErrFlytePublicationNotIssuable)
-		default:
-			return fmt.Errorf("%w: unsupported publication phase %s", ErrFlytePublicationNotIssuable, publication.Phase)
-		}
-
-		var gateway FlyteGateway
-		if err := lockForUpdate(tx).First(&gateway, publication.GatewayID).Error; err != nil {
-			return err
-		}
-		if gateway.AccessGroup != expectedAccessGroup {
-			return fmt.Errorf("%w: publication access group changed", ErrFlytePublicationConflict)
-		}
-
-		var existing FlytePublicationBinding
-		err := lockForUpdate(tx).Where("publication_id = ? AND idempotency_key = ?", publication.ID, idempotencyKey).First(&existing).Error
-		if err == nil {
-			if err := tx.First(&token, existing.TokenID).Error; err != nil {
-				return err
-			}
-			if token.UserId != mutation.UserID {
-				return fmt.Errorf("%w: idempotency key belongs to another API key owner", ErrFlytePublicationConflict)
-			}
-			return nil
-		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-
-		var tokenCount int64
-		if err := tx.Model(&Token{}).Where("user_id = ?", mutation.UserID).Count(&tokenCount).Error; err != nil {
-			return err
-		}
-		if int(tokenCount) >= operation_setting.GetMaxUserTokens() {
-			return ErrFlytePublicationTokenLimit
-		}
-		key, err := common.GenerateKey()
-		if err != nil {
-			return err
-		}
-		now := common.GetTimestamp()
-		token = Token{
-			UserId:             mutation.UserID,
-			Name:               name,
-			Key:                key,
-			Status:             common.TokenStatusEnabled,
-			CreatedTime:        now,
-			AccessedTime:       now,
-			ExpiredTime:        -1,
-			UnlimitedQuota:     true,
-			ModelLimitsEnabled: true,
-			Group:              gateway.AccessGroup,
-		}
-		if err := tx.Create(&token).Error; err != nil {
-			return err
-		}
-		if err := bindFlyteToken(tx, publication, gateway, token.Id, idempotencyKey, now); err != nil {
-			return err
-		}
-		created = true
-		return nil
-	})
-	if err != nil {
-		return nil, false, err
-	}
-	invalidateFlytePublicationTokenCaches([]int{token.Id})
-	return &token, created, nil
+	return loadFlytePublicationView(DB, publication)
 }
 
 func enabledChannelConflictWithTx(tx *gorm.DB, managedChannelID int, group, modelCode string) (int, bool) {
@@ -550,117 +381,11 @@ func enabledChannelConflictWithTx(tx *gorm.DB, managedChannelID int, group, mode
 	return 0, false
 }
 
-func AddFlytePublicationBindings(publicationID int64, tokenIDs []int, idempotencyKey string) (*FlytePublicationView, error) {
-	now := common.GetTimestamp()
-	var publication FlytePublication
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := lockForUpdate(tx).First(&publication, publicationID).Error; err != nil {
-			return err
-		}
-		if strings.TrimSpace(idempotencyKey) != "" {
-			var existing FlytePublicationBinding
-			if err := tx.Where("publication_id = ? AND idempotency_key = ?", publication.ID, strings.TrimSpace(idempotencyKey)).First(&existing).Error; err == nil {
-				return nil
-			} else if err != nil && err != gorm.ErrRecordNotFound {
-				return err
-			}
-		}
-		var gateway FlyteGateway
-		if err := lockForUpdate(tx).First(&gateway, publication.GatewayID).Error; err != nil {
-			return err
-		}
-		for _, tokenID := range tokenIDs {
-			if err := bindFlyteToken(tx, publication, gateway, tokenID, idempotencyKey, now); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	invalidateFlytePublicationTokenCaches(tokenIDs)
-	return loadFlytePublicationView(DB, publication)
-}
-
-func bindFlyteToken(tx *gorm.DB, publication FlytePublication, gateway FlyteGateway, tokenID int, idempotencyKey string, now int64) error {
-	var existing FlytePublicationBinding
-	if err := tx.Where("publication_id = ? AND token_id = ?", publication.ID, tokenID).First(&existing).Error; err == nil {
-		return nil
-	} else if err != nil && err != gorm.ErrRecordNotFound {
-		return err
-	}
-	var token Token
-	if err := lockForUpdate(tx).First(&token, tokenID).Error; err != nil {
-		return err
-	}
-	if token.Group == "" || strings.EqualFold(token.Group, "auto") || token.Group != gateway.AccessGroup {
-		return fmt.Errorf("token %d must use fixed group %s", tokenID, gateway.AccessGroup)
-	}
-	managed := false
-	if token.ModelLimitsEnabled {
-		models := token.GetModelLimitsMap()
-		if !models[publication.ModelCode] {
-			models[publication.ModelCode] = true
-			token.ModelLimits = sortedModelLimits(models)
-			managed = true
-			if err := tx.Model(&token).Select("model_limits").Update("model_limits", token.ModelLimits).Error; err != nil {
-				return err
-			}
-		}
-	}
-	binding := FlytePublicationBinding{PublicationID: publication.ID, TokenID: tokenID, ManagedPermissionAdded: managed, IdempotencyKey: strings.TrimSpace(idempotencyKey), CreatedAt: now}
-	return tx.Create(&binding).Error
-}
-
-func RemoveFlytePublicationBinding(publicationID int64, tokenID int) (bool, error) {
-	unpublished := false
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		var publication FlytePublication
-		if err := lockForUpdate(tx).First(&publication, publicationID).Error; err != nil {
-			return err
-		}
-		if err := unbindFlyteToken(tx, publication, tokenID); err != nil {
-			return err
-		}
-		var count int64
-		if err := tx.Model(&FlytePublicationBinding{}).Where("publication_id = ?", publication.ID).Count(&count).Error; err != nil {
-			return err
-		}
-		if count == 0 {
-			if err := tx.Delete(&publication).Error; err != nil {
-				return err
-			}
-			unpublished = true
-			return rebuildFlyteManagedChannel(tx, publication.GatewayID)
-		}
-		return nil
-	})
-	if err == nil && unpublished {
-		InitChannelCache()
-	}
-	if err == nil {
-		invalidateFlytePublicationTokenCaches([]int{tokenID})
-	}
-	return unpublished, err
-}
-
 func UnpublishFlyteDeployment(publicationID int64) error {
-	affectedTokenIDs := []int{}
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var publication FlytePublication
 		if err := lockForUpdate(tx).First(&publication, publicationID).Error; err != nil {
 			return err
-		}
-		var bindings []FlytePublicationBinding
-		if err := tx.Where("publication_id = ?", publication.ID).Find(&bindings).Error; err != nil {
-			return err
-		}
-		for _, binding := range bindings {
-			affectedTokenIDs = append(affectedTokenIDs, binding.TokenID)
-			if err := unbindFlyteToken(tx, publication, binding.TokenID); err != nil {
-				return err
-			}
 		}
 		if err := tx.Delete(&publication).Error; err != nil {
 			return err
@@ -669,35 +394,8 @@ func UnpublishFlyteDeployment(publicationID int64) error {
 	})
 	if err == nil {
 		InitChannelCache()
-		invalidateFlytePublicationTokenCaches(affectedTokenIDs)
 	}
 	return err
-}
-
-func invalidateFlytePublicationTokenCaches(tokenIDs []int) {
-	if err := InvalidateTokensCacheByIDs(tokenIDs); err != nil {
-		common.SysError(fmt.Sprintf("failed to invalidate Flyte publication token caches: %v", err))
-	}
-}
-
-func unbindFlyteToken(tx *gorm.DB, publication FlytePublication, tokenID int) error {
-	var binding FlytePublicationBinding
-	if err := lockForUpdate(tx).Where("publication_id = ? AND token_id = ?", publication.ID, tokenID).First(&binding).Error; err != nil {
-		return err
-	}
-	if binding.ManagedPermissionAdded {
-		var token Token
-		if err := lockForUpdate(tx).First(&token, tokenID).Error; err == nil && token.ModelLimitsEnabled {
-			models := token.GetModelLimitsMap()
-			delete(models, publication.ModelCode)
-			if err := tx.Model(&token).Select("model_limits").Update("model_limits", sortedModelLimits(models)).Error; err != nil {
-				return err
-			}
-		} else if err != nil && err != gorm.ErrRecordNotFound {
-			return err
-		}
-	}
-	return tx.Delete(&binding).Error
 }
 
 func createFlyteManagedChannel(tx *gorm.DB, group string) (*Channel, error) {
@@ -742,17 +440,6 @@ func rebuildFlyteManagedChannel(tx *gorm.DB, gatewayID int64) error {
 		return err
 	}
 	return channel.UpdateAbilities(tx)
-}
-
-func sortedModelLimits(models map[string]bool) string {
-	values := make([]string, 0, len(models))
-	for model, allowed := range models {
-		if allowed && strings.TrimSpace(model) != "" {
-			values = append(values, model)
-		}
-	}
-	sort.Strings(values)
-	return strings.Join(values, ",")
 }
 
 func IsFlyteManagedChannel(channelID int) bool {
@@ -925,87 +612,20 @@ func UpdateFlyteManagedChannelTuning(channelID int, priority *int64, weight *uin
 	})
 }
 
-func FlyteTokenBindingCount(tokenID int) (int64, error) {
-	var count int64
-	err := DB.Model(&FlytePublicationBinding{}).Where("token_id = ?", tokenID).Count(&count).Error
-	return count, err
-}
-
-func ValidateFlyteBoundTokenUpdate(tokenID int, group string, modelLimitsEnabled bool, modelLimits string) error {
-	if !flytePublicationTablesReady(DB) {
-		return nil
-	}
-	var current Token
-	if err := DB.First(&current, tokenID).Error; err != nil {
-		return err
-	}
-	var rows []struct {
-		ModelCode   string
-		AccessGroup string
-	}
-	if err := DB.Table("flyte_publication_bindings").Select("flyte_publications.model_code, flyte_gateways.access_group").
-		Joins("JOIN flyte_publications ON flyte_publications.id = flyte_publication_bindings.publication_id").
-		Joins("JOIN flyte_gateways ON flyte_gateways.id = flyte_publications.gateway_id").
-		Where("flyte_publication_bindings.token_id = ?", tokenID).Scan(&rows).Error; err != nil {
-		return err
-	}
-	if len(rows) == 0 {
-		return nil
-	}
-	if group != current.Group || modelLimitsEnabled != current.ModelLimitsEnabled {
-		return fmt.Errorf("bound API keys cannot change group or model restriction mode; unbind them first")
-	}
-	if group != rows[0].AccessGroup {
-		return fmt.Errorf("bound API key must remain in group %s", rows[0].AccessGroup)
-	}
-	if modelLimitsEnabled {
-		requested := map[string]bool{}
-		for _, value := range strings.Split(modelLimits, ",") {
-			requested[strings.TrimSpace(value)] = true
-		}
-		for _, row := range rows {
-			if !requested[row.ModelCode] {
-				return fmt.Errorf("bound API key cannot remove managed model %s; unbind it first", row.ModelCode)
-			}
-		}
-	}
-	return nil
-}
-
-func UnbindFlyteTokensWithTx(tx *gorm.DB, tokenIDs []int) error {
-	if !flytePublicationTablesReady(tx) {
-		return nil
-	}
-	for _, tokenID := range tokenIDs {
-		var bindings []FlytePublicationBinding
-		if err := tx.Where("token_id = ?", tokenID).Find(&bindings).Error; err != nil {
-			return err
-		}
-		for _, binding := range bindings {
-			var publication FlytePublication
-			if err := lockForUpdate(tx).First(&publication, binding.PublicationID).Error; err != nil {
-				return err
-			}
-			if err := unbindFlyteToken(tx, publication, tokenID); err != nil {
-				return err
-			}
-			var count int64
-			if err := tx.Model(&FlytePublicationBinding{}).Where("publication_id = ?", publication.ID).Count(&count).Error; err != nil {
-				return err
-			}
-			if count == 0 {
-				if err := tx.Delete(&publication).Error; err != nil {
-					return err
-				}
-				if err := rebuildFlyteManagedChannel(tx, publication.GatewayID); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return nil
-}
-
 func flytePublicationTablesReady(db *gorm.DB) bool {
-	return db.Migrator().HasTable(&FlyteGateway{}) && db.Migrator().HasTable(&FlytePublication{}) && db.Migrator().HasTable(&FlytePublicationBinding{})
+	return db.Migrator().HasTable(&FlyteGateway{}) && db.Migrator().HasTable(&FlytePublication{})
+}
+
+func DetachLegacyFlytePublicationBindings() error {
+	if !DB.Migrator().HasTable(&FlytePublicationBinding{}) {
+		return nil
+	}
+	result := DB.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&FlytePublicationBinding{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		common.SysLog(fmt.Sprintf("detached %d legacy Flyte publication API key bindings", result.RowsAffected))
+	}
+	return nil
 }
